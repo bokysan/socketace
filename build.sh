@@ -14,18 +14,19 @@ export CGO_ENABLED=0
 #	ProtoVersion string = "v1.0.0"
 
 export PACKAGE="github.com/bokysan/socketace/v2/internal/version" && \
-env \
-    GOARM=$(echo "$TARGETPLATFORM" | cut -f3 -d/ | cut -c2-) \
-    GOARCH=$(echo "$TARGETPLATFORM" | cut -f2 -d/) \
-    GIT_COMMIT="-X $PACKAGE.GitCommit=`git rev-parse HEAD`" \
-    GIT_BRANCH="-X $PACKAGE.GitBranch=`git symbolic-ref --short HEAD`" \
-    GIT_TAG="-X $PACKAGE.GitBranch=`git tag --points-at HEAD`" \
-    GIT_SUMMARY="-X $PACKAGE.GitSummary=`git describe --tags --dirty --always`" \
-    GIT_STATE="-X $PACKAGE.GitSummary=`git describe --tags --dirty --always`" \
-    BUILD_DATE="-X $PACKAGE.BuildDate=`date -u +\"%Y-%m-%dT%H:%M:%SZ\"`" \
-    GO_VERSION="-X $PACKAGE.GoVersion=`go version`" \
-    go build \
-        -o socketace \
-        -v \
-        -ldflags "-extldflags '-static'" \
-        cmd/socketace/main.go
+export GOOS="$(echo "$TARGETPLATFORM" | cut -f1 -d/)"
+export GOARM="$(echo "$TARGETPLATFORM" | cut -f3 -d/ | cut -c2-)"
+export GOARCH="$(echo "$TARGETPLATFORM" | cut -f2 -d/)"
+export GIT_COMMIT="-X $PACKAGE.GitCommit=$(git rev-parse HEAD)"
+export GIT_BRANCH="-X $PACKAGE.GitBranch=$(git symbolic-ref --short HEAD)"
+export GIT_TAG="-X $PACKAGE.GitBranch=$(git tag --points-at HEAD)"
+export GIT_SUMMARY="-X $PACKAGE.GitSummary=$(git describe --tags --dirty --always)"
+export GIT_STATE="-X $PACKAGE.GitSummary=$(git describe --tags --dirty --always)"
+export BUILD_DATE="-X $PACKAGE.BuildDate=$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")"
+export GO_VERSION="-X $PACKAGE.GoVersion=$(go version)"
+
+echo "Building: $GOOS/$GOARCH"
+go build \
+    -o socketace \
+    -ldflags "-extldflags '-static'" \
+    cmd/socketace/main.go
