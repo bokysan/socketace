@@ -35,7 +35,7 @@ func (i *Command) Execute(args []string) error {
 
 func PrintVersion() {
 	ansi.Printf(Bold+BackgroundBlue+
-		LightGray+" UNIVERSAL PROXY "+White+"%s"+LightGray+" "+Reset+"\n"+
+		LightGray+" SOCKETACE - Your universal proxy "+White+"%s"+LightGray+" "+Reset+"\n"+
 		DarkGray+" Built on    "+White+"%+v\n"+
 		DarkGray+" Git version "+White+"%+v"+DarkGray+"/"+White+"%+v"+Reset+"\n",
 		Version, BuildDate, GitBranch, GitCommit)

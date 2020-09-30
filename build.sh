@@ -13,20 +13,54 @@ export CGO_ENABLED=0
 #	GoVersion  string // the version of go, e.g. "go version go1.10.3 darwin/amd64"
 #	ProtoVersion string = "v1.0.0"
 
-export PACKAGE="github.com/bokysan/socketace/v2/internal/version" && \
-export GOOS="$(echo "$TARGETPLATFORM" | cut -f1 -d/)"
-export GOARM="$(echo "$TARGETPLATFORM" | cut -f3 -d/ | cut -c2-)"
-export GOARCH="$(echo "$TARGETPLATFORM" | cut -f2 -d/)"
-export GIT_COMMIT="-X $PACKAGE.GitCommit=$(git rev-parse HEAD)"
-export GIT_BRANCH="-X $PACKAGE.GitBranch=$(git symbolic-ref --short HEAD)"
-export GIT_TAG="-X $PACKAGE.GitBranch=$(git tag --points-at HEAD)"
-export GIT_SUMMARY="-X $PACKAGE.GitSummary=$(git describe --tags --dirty --always)"
-export GIT_STATE="-X $PACKAGE.GitSummary=$(git describe --tags --dirty --always)"
-export BUILD_DATE="-X $PACKAGE.BuildDate=$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")"
-export GO_VERSION="-X $PACKAGE.GoVersion=$(go version)"
+PACKAGE="github.com/bokysan/socketace/v2/internal/version"
+GOOS="$(echo "$TARGETPLATFORM" | cut -f1 -d/)"
+GOARM="$(echo "$TARGETPLATFORM" | cut -f3 -d/)"
+GOARCH="$(echo "$TARGETPLATFORM" | cut -f2 -d/)"
+GIT_COMMIT="-X $PACKAGE.GitCommit=$(git rev-parse HEAD)"
+GIT_BRANCH="-X $PACKAGE.GitBranch=$(git symbolic-ref --short HEAD)"
+GIT_TAG="-X $PACKAGE.GitBranch=$(git tag --points-at HEAD)"
+GIT_SUMMARY="-X $PACKAGE.GitSummary=$(git describe --tags --dirty --always)"
 
-echo "Building: $GOOS/$GOARCH"
+case "$GIT_SUMMARY" in
+  *dirty*)
+    GIT_STATE="-X $PACKAGE.GitState=dirty"
+    ;;
+  *)
+    GIT_STATE="-X $PACKAGE.GitState=clean"
+esac
+
+
+BUILD_DATE="-X $PACKAGE.BuildDate=$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")"
+GO_VERSION="-X $PACKAGE.GoVersion=$(go version)"
+
+
+export PACKAGE
+export GOOS
+export GOARM
+export GOARCH
+export GIT_COMMIT
+export GIT_BRANCH
+export GIT_TAG
+export GIT_SUMMARY
+export GIT_STATE
+export BUILD_DATE
+export GO_VERSION
+
+mkdir -p target
+
+if [ -z "$OUTPUT" ]; then
+  OUTPUT="target/socketace-$GOOS-$GOARCH"
+  if [ -n "$GOARM" ]; then
+    OUTPUT="$OUTPUT-$GOARM"
+  fi
+  if [ "$GOOS" = "windows" ]; then
+    OUTPUT="$OUTPUT.exe"
+  fi
+fi
+
+echo "Building: $GOOS/$GOARCH: $OUTPUT"
 go build \
-    -o socketace \
+    -o "$OUTPUT" \
     -ldflags "-extldflags '-static'" \
     cmd/socketace/main.go

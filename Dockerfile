@@ -16,7 +16,7 @@ COPY internal ./internal
 
 ARG TARGETPLATFORM
 RUN echo "Building on $BUILDPLATFORM for $TARGETPLATFORM"
-RUN ./build.sh
+RUN env OUTPUT="socketace" ./build.sh
 
 # ================ COMPRESS EXECUTABLE MODULE ================
 FROM --platform=$TARGETPLATFORM alpine AS upx
