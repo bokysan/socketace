@@ -1,4 +1,5 @@
 #!/bin/sh
+set -e
 
 for TARGETPLATFORM in \
   linux/386 linux/amd64 linux/arm/5 linux/arm/6 linux/arm/7 linux/arm64 linux/mips linux/mips64 linux/mips64le linux/mipsle linux/ppc64 \
@@ -12,7 +13,7 @@ for TARGETPLATFORM in \
   openbsd/386 openbsd/amd64 openbsd/arm openbsd/arm64
 do
   export TARGETPLATFORM
-  ./build.sh &
+  ./build.sh
 done
 
 wait # to not exit the containing script until all execution has finished
