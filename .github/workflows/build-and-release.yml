@@ -37,6 +37,7 @@ jobs:
       - name: Create platform-specific builds
         run: |
           go get ./...
+          go mod download
           ./build-all.sh
       - name: Create release
         id: create_release
