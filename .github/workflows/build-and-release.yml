@@ -39,7 +39,7 @@ jobs:
           echo "go mod download"
           GO111MODULE=on go mod download
           echo "./build-all.sh"
-          GOPATH=. ./build-all.sh
+          GOPATH=$(pwd) ./build-all.sh
       - name: Create release
         id: create_release
         if: startsWith(github.ref, 'refs/tags/')
