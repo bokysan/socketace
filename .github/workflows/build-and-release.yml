@@ -36,9 +36,13 @@ jobs:
           go-version: "1.14"
       - name: Create platform-specific builds
         run: |
+          echo "go get ./..."
           go get ./...
+          echo "go mod download"
           go mod download
+          echo "go mod vendor"
           go mod vendor
+          echo "./build-all.sh"
           ./build-all.sh
       - name: Create release
         id: create_release
