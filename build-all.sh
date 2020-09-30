@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 
+echo "GOROOT=$GOROOT"
+echo "GOPATH=GOPATH"
+echo "GOBIN=GOBIN"
+
 for TARGETPLATFORM in \
   linux/386 linux/amd64 linux/arm/5 linux/arm/6 linux/arm/7 linux/arm64 linux/mips linux/mips64 linux/mips64le linux/mipsle linux/ppc64 \
   linux/ppc64le linux/riscv64 linux/s390x \
