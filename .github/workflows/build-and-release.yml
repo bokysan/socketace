@@ -38,6 +38,7 @@ jobs:
         run: |
           go get ./...
           go mod download
+          go mod vendor
           ./build-all.sh
       - name: Create release
         id: create_release
