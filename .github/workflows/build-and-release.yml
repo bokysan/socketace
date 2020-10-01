@@ -21,7 +21,7 @@ jobs:
           DOCKER_PASSWORD: '${{ secrets.DOCKER_ACCESS_TOKEN }}'
           DOCKER_BUILDKIT: 1
           DOCKER_CLI_EXPERIMENTAL: enabled
-          PLATFORMS: "linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64,linux/ppc64le,linux/s390,linux/sparc,linux/mips,linux/mipsle,linux/mips64p32le,linux/mips64p32,linux/mips64le"
+          PLATFORMS: "linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le"
         if: startsWith(github.ref, 'refs/tags/')
         run: ./build-docker.sh -t boky/socketace:$(echo ${GITHUB_REF:10}) --push
 
