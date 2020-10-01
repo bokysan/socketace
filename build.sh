@@ -20,7 +20,7 @@ GOARM="$(echo "$TARGETPLATFORM" | cut -f3 -d/)"
 GOARCH="$(echo "$TARGETPLATFORM" | cut -f2 -d/)"
 GIT_COMMIT="-X $PACKAGE.GitCommit=$(git rev-parse HEAD)"
 GIT_BRANCH="-X $PACKAGE.GitBranch=$(git symbolic-ref --short HEAD)"
-GIT_TAG="-X $PACKAGE.GitBranch=$(git tag --points-at HEAD)"
+GIT_TAG="-X $PACKAGE.GitTag=$(git tag --points-at HEAD)"
 GIT_SUMMARY="-X $PACKAGE.GitSummary=$(git describe --tags --dirty --always)"
 
 case "$GIT_SUMMARY" in
