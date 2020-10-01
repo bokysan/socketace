@@ -144,12 +144,13 @@ builds:
 
 nfpms:
   - id: "default"
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     builds:
       - default
 
     vendor: Bokysan
     homepage: https://github.com/bokysan/socketace
+
+    license: GNU GPL v3.0
 
     # Your app's maintainer (probably you).
     # Default is empty.
