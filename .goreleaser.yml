@@ -73,7 +73,6 @@ builds:
       - dragonfly
       - openbsd
       - windows
-      - android
 
     goarch:
       - 386
