@@ -73,6 +73,7 @@ builds:
       - dragonfly
       - openbsd
       - windows
+      - android
 
     goarch:
       - 386
@@ -93,6 +94,18 @@ builds:
     gomips:
       - hardfloat
       - softfloat
+
+    ignore:
+      - goos: openbsd
+        goarch: arm
+      - goos: netbsd
+        goarch: arm
+      - goos: freebsd
+        goarch: arm
+      - goos: netbsd
+        goarch: arm
+      - goos: solaris
+        goarch: arm
 
     # List of combinations of GOOS + GOARCH + GOARM to ignore.
     # Default is empty.
@@ -128,3 +141,27 @@ builds:
     # Useful for library projects.
     # Default is false
     skip: false
+
+nfpms:
+  - id: "default"
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    builds:
+      - default
+
+    vendor: Bokysan
+    homepage: https://github.com/bokysan/socketace
+
+    # Your app's maintainer (probably you).
+    # Default is empty.
+    maintainer: Boky <https://github.com/bokysan/socketace>
+
+    # Your app's description.
+    # Default is empty.
+    description: Your ultimate connection proxy.
+
+    bindir: "/usr/local/bin"
+
+    formats:
+      - apk
+      - deb
+      - rpm
