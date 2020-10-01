@@ -30,7 +30,7 @@ archives:
 
 builds:
   - id: default
-  - main: /home/runner/work/socketace/socketace/cmd/socketace/main.go
+  - main: cmd/socketace/main.go
     binary: socketace
 
     # Custom flags templates.
