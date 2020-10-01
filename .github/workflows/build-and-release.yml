@@ -45,6 +45,7 @@ jobs:
           args: release --rm-dist
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOVERSION: "1.14" # TODO: Find a better way to do this
 
 #      - name: Create platform-specific builds
 #        run: |
