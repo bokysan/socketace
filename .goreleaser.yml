@@ -30,7 +30,7 @@ archives:
 
 builds:
   - id: default
-  - main: ./cmd/socketace/main.go
+    main: ./cmd/socketace/main.go
     binary: socketace
 
     # Custom flags templates.
@@ -48,16 +48,14 @@ builds:
     # Custom ldflags templates.
     # Default is `-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser`.
     ldflags:
-      - >-
-        -s
-        -w
-        -X github.com/bokysan/socketace/v2/internal/version.version={{ .Version }}
-        -X github.com/bokysan/socketace/v2/internal/version.GitCommit={{ .ShortCommit }}
-        -X github.com/bokysan/socketace/v2/internal/version.GitBranch=""
-        -X github.com/bokysan/socketace/v2/internal/version.GitTag={{ .Tag }}
-        -X github.com/bokysan/socketace/v2/internal/version.GitSummary=""
-        -X github.com/bokysan/socketace/v2/internal/version.BuildDate={{ .Date }}
-        -X github.com/bokysan/socketace/v2/internal/version.GoVersion={{ .Env.GOVERSION }}
+      - -extldflags '-static'
+      - "-X github.com/bokysan/socketace/v2/internal/version.version={{ .Version }}"
+      - "-X github.com/bokysan/socketace/v2/internal/version.GitCommit={{ .ShortCommit }}"
+      - "-X github.com/bokysan/socketace/v2/internal/version.GitBranch="
+      - "-X github.com/bokysan/socketace/v2/internal/version.GitTag={{ .Tag }}"
+      - "-X github.com/bokysan/socketace/v2/internal/version.GitSummary="
+      - "-X github.com/bokysan/socketace/v2/internal/version.BuildDate={{ .Date }}"
+      #- "-X github.com/bokysan/socketace/v2/internal/version.GoVersion='{{ .Env.GOVERSION }}'"
 
     env:
       - CGO_ENABLED=0
@@ -65,34 +63,10 @@ builds:
     # GOOS list to build for.
     # For more info refer to: https://golang.org/doc/install/source#environment
     # Defaults are darwin and linux.
-    goos:
-      - darwin
-      - linux
-      - freebsd
-      - netbsd
-      - dragonfly
-      - openbsd
-      - windows
-
-    goarch:
-      - 386
-      - amd64
-      - mips
-      - mips64
-      - mips64le
-      - mipsle
-      - ppc64le
-      - arm
-      - arm64
-
-    goarm:
-      - 5
-      - 6
-      - 7
-
-    gomips:
-      - hardfloat
-      - softfloat
+    goos: [ 'darwin', 'linux', 'freebsd', 'netbsd', 'dragonfly', 'openbsd', 'windows' ]
+    goarch: [ '386', 'amd64', 'mips', 'mips64', 'mips64le', 'mipsle', 'ppc64le', 'arm', 'arm64' ]
+    goarm: [ '5', '6', '7' ]
+    gomips: [ 'hardfloat', 'softfloat' ]
 
     ignore:
       - goos: openbsd
