@@ -76,9 +76,9 @@ builds:
     # link: running gcc failed: exit status 1
     # /usr/bin/ld: /tmp/go-link-964528223/go.o: Relocations in generic ELF (EM: 183)
     #
-    goos: [ 'darwin', 'linux', 'freebsd', 'netbsd', 'dragonfly', 'openbsd', 'windows' ]
-    goarch: [ '386', 'amd64', 'mips', 'mips64', 'mips64le', 'mipsle', 'ppc64le', 'arm', 'arm64' ]
-    goarm: [ '5', '6', '7' ]
+    goos: [ 'darwin', 'linux', 'freebsd', 'netbsd', 'dragonfly', 'openbsd', 'windows' ] # Dynamic
+    goarch: [ '386', 'amd64', 'mips', 'mips64', 'mips64le', 'mipsle', 'ppc64le', 'arm', 'arm64' ] # Dynamic
+    goarm: [ '5', '6', '7' ] # Dynamic
 
     gomips: [ 'hardfloat', 'softfloat' ]
 

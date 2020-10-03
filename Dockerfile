@@ -24,9 +24,9 @@ RUN true && \
     export GOARM="$(echo "$TARGETPLATFORM" | cut -f3 -d/ | sed -e 's/^v//')" && \
     export GOVERSION="$(go version)" && \
     export GIT_BRANCH="$(git symbolic-ref --short HEAD 2>/dev/null || echo '')" && \
-    sed -i -e "s/^    goos:.*\$/    goos: [ '$GOOS' ]/" .goreleaser.yml && \
-    sed -i -e "s/^    goarch:.*\$/    goarch: [ '$GOARCH' ]/" .goreleaser.yml && \
-    sed -i -e "s/^    goarm:.*\$/    goarm: [ '$GOARM' ]/" .goreleaser.yml && \
+    sed -i -e "s/^    goos:.*# Dynamic\$/    goos: [ '$GOOS' ]/" .goreleaser.yml && \
+    sed -i -e "s/^    goarch:.*# Dynamic\$/    goarch: [ '$GOARCH' ]/" .goreleaser.yml && \
+    sed -i -e "s/^    goarm:.*# Dynamic\$/    goarm: [ '$GOARM' ]/" .goreleaser.yml && \
     ./bin/goreleaser build --rm-dist --skip-validate $GORELEASER_EXTRA_ARGS && \
     export DIR="default_${GOOS}_${GOARCH}" && \
     if [ -n "${GOARM}" ]; then export DIR="${DIR}_${GOARM}"; fi && \
