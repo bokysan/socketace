@@ -1,5 +1,4 @@
-name: Docker tag image
-
+name: Build and release
 on: push
 
 jobs:
@@ -25,7 +24,7 @@ jobs:
           DOCKER_BUILDKIT: 1
           DOCKER_CLI_EXPERIMENTAL: enabled
           PLATFORMS: "linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le"
-        run: ./build-docker.sh -t boky/socketace:edge --push
+        run: ./build-docker.sh -t boky/socketace:edge --push --build-arg "GORELEASER_EXTRA_ARGS=--snapshot"
 
       - name: Extract tag names
         id: extract_tag_names
@@ -106,7 +105,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v2
         with:
           version: latest
-          args: build --rm-dist
+          args: build --rm-dist --skip-validate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

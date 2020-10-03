@@ -16,6 +16,7 @@ COPY cmd ./cmd
 COPY internal ./internal
 
 ARG TARGETPLATFORM
+ARG GORELEASER_EXTRA_ARGS
 RUN true && \
     echo "Building on $BUILDPLATFORM for $TARGETPLATFORM" && \
     export GOOS="$(echo "$TARGETPLATFORM" | cut -f1 -d/)" && \
@@ -25,7 +26,7 @@ RUN true && \
     sed -i -e "s/^    goos:.*\$/    goos: [ '$GOOS' ]/" .goreleaser.yml && \
     sed -i -e "s/^    goarch:.*\$/    goarch: [ '$GOARCH' ]/" .goreleaser.yml && \
     sed -i -e "s/^    goarm:.*\$/    goarm: [ '$GOARM' ]/" .goreleaser.yml && \
-    ./bin/goreleaser build --rm-dist --skip-validate && \
+    ./bin/goreleaser build --rm-dist --skip-validate $GORELEASER_EXTRA_ARGS && \
     export DIR="default_${GOOS}_${GOARCH}" && \
     if [ -n "${GOARM}" ]; then export DIR="${DIR}_${GOARM}"; fi && \
     cp dist/${DIR}/socketace ./socketace
