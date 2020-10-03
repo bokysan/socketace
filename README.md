@@ -11,8 +11,12 @@ allows you to proxy *multiple* connections through:
 
 ## Contents
 
-
 1. [Rationale](#rationale)
+1. [Installation](#installation)
+    1. [Install using docker](#install-using-docker)
+    1. [Install using brew](#install-using-brew)
+    1. [Install on Linux using a package manager](#install-on-linux-using-a-package-manager)
+    1. [Manual install](#manual-install)
 1. [Usage](#usage)
     1. [Name](#name)
     1. [Synopsis](#synopsis)
@@ -36,6 +40,44 @@ There are several use cases where SocektAce might come in handy:
 - **Expose Unix sockets as TCP streams** If your service is only available as a Unix socket,
   you can use SocketAce to expose it on a host and access it from other (even Windows) servers
   
+## Installation
+
+This software uses [goreleaser](https://goreleaser.com/) and [buildx](https://docs.docker.com/buildx/working-with-buildx/)
+to create software distribution. There are several ways to install it:
+
+### Install using docker
+
+The simplest way to use SOCKETACE is by referencing a pre-build [docker image](https://hub.docker.com/repository/docker/boky/socketace), 
+e.g.
+
+```shell script
+docker run --rm -it boky/socketace
+```
+
+### Install using brew
+
+```shell script
+brew tap bokysan/socketace https://github.com/bokysan/socketace-brew.git
+brew install socketace
+```
+
+### Install on Linux using a package manager
+
+The build system provides RPM, DEB and APK packages:
+
+1. Go to [Releases](https://github.com/bokysan/socketace/releases) page.
+2. Download the version appropriate for your system.
+3. Execute install for your distribution, e.g. `dpkg -i <package>.deb`
+
+
+### Manual install
+
+To install manually:
+
+1. Go to [Releases](https://github.com/bokysan/socketace/releases) page.
+2. Download the version appropriate for your system into `$HOME/bin` or similar.
+
+
   
 ## Usage
 
