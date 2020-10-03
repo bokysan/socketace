@@ -51,7 +51,7 @@ builds:
       - -extldflags '-static'
       - "-X github.com/bokysan/socketace/v2/internal/version.version={{ .Version }}"
       - "-X github.com/bokysan/socketace/v2/internal/version.GitCommit={{ .ShortCommit }}"
-      - "-X github.com/bokysan/socketace/v2/internal/version.GitBranch="
+      - "-X github.com/bokysan/socketace/v2/internal/version.GitBranch={{ .Env.GIT_BRANCH }}"
       - "-X github.com/bokysan/socketace/v2/internal/version.GitTag={{ .Tag }}"
       - "-X github.com/bokysan/socketace/v2/internal/version.GitSummary="
       - "-X github.com/bokysan/socketace/v2/internal/version.BuildDate={{ .Date }}"
