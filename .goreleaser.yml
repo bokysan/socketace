@@ -42,14 +42,13 @@ builds:
 
     # Custom asmflags templates.
     # Default is empty.
-    asmflags:
-      - -D mysymbol
-      - all=-trimpath={{.Env.GOPATH}}
+    #asmflags:
+    #  - all=-trimpath={{.Env.GOPATH}}
 
     # Custom gcflags templates.
     # Default is empty.
-    gcflags:
-      - all=-trimpath={{.Env.GOPATH}}
+    #gcflags:
+    #  - all=-trimpath={{.Env.GOPATH}}
 
     # Custom ldflags templates.
     # Default is `-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser`.
@@ -184,3 +183,6 @@ brews:
     # Default is empty.
     test: |
       system "#{bin}/socketace version"
+
+    install: |
+      bin.install "socketace"
