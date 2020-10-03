@@ -36,20 +36,6 @@ builds:
     main: ./cmd/socketace/main.go
     binary: socketace
 
-    # Custom flags templates.
-    # Default is empty.
-    # flags: []
-
-    # Custom asmflags templates.
-    # Default is empty.
-    #asmflags:
-    #  - all=-trimpath={{.Env.GOPATH}}
-
-    # Custom gcflags templates.
-    # Default is empty.
-    #gcflags:
-    #  - all=-trimpath={{.Env.GOPATH}}
-
     # Custom ldflags templates.
     # Default is `-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser`.
     ldflags:
@@ -76,11 +62,13 @@ builds:
     # link: running gcc failed: exit status 1
     # /usr/bin/ld: /tmp/go-link-964528223/go.o: Relocations in generic ELF (EM: 183)
     #
+    # Android seems to require CGO_ENABLED=1 flag. This means a separate build will be needed to
+    # support Android.
+    #
     goos: [ 'darwin', 'linux', 'freebsd', 'netbsd', 'dragonfly', 'openbsd', 'windows' ] # Dynamic
-    goarch: [ '386', 'amd64', 'mips', 'mips64', 'mips64le', 'mipsle', 'ppc64le', 'arm', 'arm64' ] # Dynamic
+    goarch: [ '386', 'amd64', 'mips', 'mips64', 'mips64le', 'mipsle', 'ppc64le', 'arm', 'arm64', 's390x' ] # Dynamic
     goarm: [ '5', '6', '7' ] # Dynamic
-
-    gomips: [ 'hardfloat', 'softfloat' ]
+    gomips: [ 'hardfloat', 'softfloat' ] # Dynamic
 
     ignore:
       - goos: openbsd
@@ -95,18 +83,6 @@ builds:
         goarch: arm
 
     mod_timestamp: '{{ .CommitTimestamp }}'
-
-    # Hooks can be used to customize the final binary,
-    # for example, to run generators.
-    # Those fields allow templates.
-    # Default is both hooks empty.
-    #hooks:
-    #  pre: rice embed-go
-    #  post: ./script.sh {{ .Path }}
-
-    # If true, skip the build.
-    # Useful for library projects.
-    # Default is false
     skip: false
 
 nfpms:

@@ -1,5 +1,5 @@
 # ================ BUILD EXECUTABLE MODULE ================
-FROM --platform=$BUILDPLATFORM golang:1.14-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.15-alpine AS build
 ARG BUILDPLATFORM
 LABEL maintainer="Bojan Cekrlic <https://github.com/bokysan/>"
 
@@ -27,22 +27,96 @@ RUN true && \
     sed -i -e "s/^    goos:.*# Dynamic\$/    goos: [ '$GOOS' ]/" .goreleaser.yml && \
     sed -i -e "s/^    goarch:.*# Dynamic\$/    goarch: [ '$GOARCH' ]/" .goreleaser.yml && \
     sed -i -e "s/^    goarm:.*# Dynamic\$/    goarm: [ '$GOARM' ]/" .goreleaser.yml && \
+    sed -i -e "s/^    gomips:.*# Dynamic\$/    gomips: [ 'softfloat' ]/" .goreleaser.yml && \
     ./bin/goreleaser build --rm-dist --skip-validate $GORELEASER_EXTRA_ARGS && \
     export DIR="default_${GOOS}_${GOARCH}" && \
     if [ -n "${GOARM}" ]; then export DIR="${DIR}_${GOARM}"; fi && \
+    case "${GOARCH}" in mips*) export DIR="${DIR}_softfloat"; ;; esac && \
     cp dist/${DIR}/socketace ./socketace
 
-# ================ COMPRESS EXECUTABLE MODULE ================
-FROM --platform=$TARGETPLATFORM alpine AS upx
-ARG TARGETPLATFORM
-
-RUN case "$TARGETPLATFORM" in "linux/ppc64le") ;; "linux/arm/v6") ;; "linux/arm/v7") ;; "linux/arm64") ;; *) apk add --no-cache upx ;; esac
-
+# ================ linux/386 ================
+FROM --platform=linux/386 alpine AS upx
+RUN apk add --no-cache upx
 COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
-RUN case "$TARGETPLATFORM" in "linux/ppc64le") ;; "linux/arm/v6") ;; "linux/arm/v7") ;; "linux/arm64") ;; *) upx -9 /bin/socketace && upx -t /bin/socketace ;; esac
+RUN upx -9 /bin/socketace
 RUN /bin/socketace version
 
-# ================ BUILD FINAL IMAGE ================
-FROM --platform=$TARGETPLATFORM scratch
+FROM --platform=linux/386 scratch
 COPY --from=upx /bin/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/amd64 ================
+FROM --platform=linux/amd64 alpine AS upx
+RUN apk add --no-cache upx
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+RUN upx -9 /bin/socketace
+RUN /bin/socketace version
+
+FROM --platform=linux/amd64 scratch
+COPY --from=upx /bin/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/arm/v5 ================
+FROM --platform=linux/arm/v5 scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/arm/v6 ================
+FROM --platform=linux/arm/v6 scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/arm/v7 ================
+FROM --platform=linux/arm/v7 scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/ppc64 ================
+FROM --platform=linux/ppc64 scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/ppc64le ================
+FROM --platform=linux/ppc64le scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/ppc64le ================
+FROM --platform=linux/ppc64le scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/mips ================
+FROM --platform=linux/mips scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/mipsle ================
+FROM --platform=linux/mipsle scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/mips32 ================
+FROM --platform=linux/mips32 scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/mips32le ================
+FROM --platform=linux/mips32le scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/mips64 ================
+FROM --platform=linux/mips64 scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/mips64le ================
+FROM --platform=linux/mips64le scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
+ENTRYPOINT [ "/bin/socketace" ]
+
+# ================ linux/s390x ================
+FROM --platform=linux/s390x scratch
+COPY --from=build /usr/local/go/src/github.com/bokysan/socketace/socketace /bin/socketace
 ENTRYPOINT [ "/bin/socketace" ]
