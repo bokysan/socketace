@@ -55,6 +55,9 @@ builds:
       - "-X github.com/bokysan/socketace/v2/internal/version.GitTag={{ .Tag }}"
       - "-X github.com/bokysan/socketace/v2/internal/version.GitSummary="
       - "-X github.com/bokysan/socketace/v2/internal/version.BuildDate={{ .Date }}"
+      # There's an issue with ldflags when the there are spaces in argument value -- this does not
+      # get escaped properly lading to a weird error of how `link` cannot be called. Until the
+      # issue is resolved, we will not be including the go version in the build.
       #- "-X github.com/bokysan/socketace/v2/internal/version.GoVersion='{{ .Env.GOVERSION }}'"
 
     env:
@@ -62,11 +65,24 @@ builds:
 
     # GOOS list to build for.
     # For more info refer to: https://golang.org/doc/install/source#environment
-    # Defaults are darwin and linux.
+    #
+    # Note: building for android (at least arm64) fails:
+    # https://github.com/bokysan/socketace/runs/1192744354?check_suite_focus=true#step:4:88
+    # link: running gcc failed: exit status 1
+    # /usr/bin/ld: /tmp/go-link-964528223/go.o: Relocations in generic ELF (EM: 183)
+    #
     goos: [ 'darwin', 'linux', 'freebsd', 'netbsd', 'dragonfly', 'openbsd', 'windows' ]
     goarch: [ '386', 'amd64', 'mips', 'mips64', 'mips64le', 'mipsle', 'ppc64le', 'arm', 'arm64' ]
     goarm: [ '5', '6', '7' ]
-    gomips: [ 'hardfloat', 'softfloat' ]
+
+    # There seems to be a weird issue with mipsle build, because goreleaser creates a file
+    # 'socketace_1.0.2_linux_mipsle' without '_hardfloat' or '_softloat' extension. See:
+    # https://github.com/bokysan/socketace/runs/1201307874?check_suite_focus=true#step:4:247
+    #
+    # The issue could be a bug or a configuration issue. Until we resolve this, we will build
+    # softfloat only, as it's more compatible and the code doesn't use any floats either way.
+    # gomips: [ 'hardfloat', 'softfloat' ]
+    gomips: [ 'softfloat' ]
 
     ignore:
       - goos: openbsd
@@ -117,25 +133,12 @@ builds:
 
 nfpms:
   - id: "default"
-    builds:
-      - default
-
+    builds: [ "default" ]
     vendor: Bokysan
     homepage: https://github.com/bokysan/socketace
-
     license: GNU GPL v3.0
-
-    # Your app's maintainer (probably you).
-    # Default is empty.
     maintainer: Boky <https://github.com/bokysan/socketace>
-
-    # Your app's description.
-    # Default is empty.
     description: Your ultimate connection proxy.
-
     bindir: "/usr/local/bin"
-
-    formats:
-      - apk
-      - deb
-      - rpm
+    formats: [ 'apk', 'deb', 'rpm' ]
+    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
