@@ -22,21 +22,37 @@ func (i *Command) String() string {
 	return "Version details"
 }
 
+//goland:noinspection GoUnhandledErrorResult
 func (i *Command) Execute(args []string) error {
 	PrintVersion()
 	ansi.Printf(DarkGray+" Author      "+White+"%+v"+Reset+"\n", "Bojan Cekrlic <github.com/bokysan>")
-	ansi.Printf(DarkGray+" Git tag     "+White+"%+v"+Reset+"\n", GitTag)
-	ansi.Printf(DarkGray+" Git branch  "+White+"%+v"+Reset+"\n", GitBranch)
-	ansi.Printf(DarkGray+" Git state   "+White+"%+v"+Reset+"\n", GitState)
-	ansi.Printf(DarkGray+" Go version  "+White+"%+v"+Reset+"\n", GoVersion)
+	if GitTag != "" {
+		ansi.Printf(DarkGray+" Git tag     "+White+"%+v"+Reset+"\n", GitTag)
+	}
+	if GitBranch != "" {
+		ansi.Printf(DarkGray+" Git branch  "+White+"%+v"+Reset+"\n", GitBranch)
+	}
+	if GitState != "" {
+		ansi.Printf(DarkGray+" Git state   "+White+"%+v"+Reset+"\n", GitState)
+	}
+	if GoVersion != "" {
+		ansi.Printf(DarkGray+" Go version  "+White+"%+v"+Reset+"\n", GoVersion)
+	}
 	os.Exit(0)
 	return nil
 }
 
+//goland:noinspection GoUnhandledErrorResult
+
 func PrintVersion() {
+	v := Version
+	if v == "" {
+		v = GitTag
+	}
+
 	ansi.Printf(Bold+BackgroundBlue+
 		LightGray+" SOCKETACE - Your universal proxy "+White+"%s"+LightGray+" "+Reset+"\n"+
 		DarkGray+" Built on    "+White+"%+v\n"+
-		DarkGray+" Git version "+White+"%+v"+DarkGray+"/"+White+"%+v"+Reset+"\n",
-		Version, BuildDate, GitBranch, GitCommit)
+		DarkGray+" Git version "+White+"%+v"+Reset+"\n",
+		v, BuildDate, GitCommit)
 }

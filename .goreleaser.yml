@@ -12,8 +12,13 @@ archives:
   - id: default
     builds:
     - default
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: binary
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+    wrap_in_directory: true
+
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
 
     # Additional files/template/globs you want to add to the archive.
     # Defaults are any files matching `LICENCE*`, `LICENSE*`,
@@ -25,8 +30,6 @@ archives:
     #  - docs/*
     #  - design/*.png
     #  - templates/**/*
-    files:
-      - none*
 
 builds:
   - id: default
@@ -39,11 +42,14 @@ builds:
 
     # Custom asmflags templates.
     # Default is empty.
-    # asmflags: []
+    asmflags:
+      - -D mysymbol
+      - all=-trimpath={{.Env.GOPATH}}
 
     # Custom gcflags templates.
     # Default is empty.
-    # gcflags: []
+    gcflags:
+      - all=-trimpath={{.Env.GOPATH}}
 
     # Custom ldflags templates.
     # Default is `-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser`.
@@ -75,14 +81,7 @@ builds:
     goarch: [ '386', 'amd64', 'mips', 'mips64', 'mips64le', 'mipsle', 'ppc64le', 'arm', 'arm64' ]
     goarm: [ '5', '6', '7' ]
 
-    # There seems to be a weird issue with mipsle build, because goreleaser creates a file
-    # 'socketace_1.0.2_linux_mipsle' without '_hardfloat' or '_softloat' extension. See:
-    # https://github.com/bokysan/socketace/runs/1201307874?check_suite_focus=true#step:4:247
-    #
-    # The issue could be a bug or a configuration issue. Until we resolve this, we will build
-    # softfloat only, as it's more compatible and the code doesn't use any floats either way.
-    # gomips: [ 'hardfloat', 'softfloat' ]
-    gomips: [ 'softfloat' ]
+    gomips: [ 'hardfloat', 'softfloat' ]
 
     ignore:
       - goos: openbsd
@@ -96,26 +95,6 @@ builds:
       - goos: solaris
         goarch: arm
 
-    # List of combinations of GOOS + GOARCH + GOARM to ignore.
-    # Default is empty.
-    #ignore:
-    #  - goos: darwin
-    #    goarch: 386
-    #  - goos: linux
-    #    goarch: arm
-    #    goarm: 7
-    #  - goarm: mips64
-    #    gomips: hardfloat
-
-    # Set a specific go binary to use when building. It is safe to ignore
-    # this option in most cases.
-    # Default is "go"
-    # gobinary: "go1.13.4"
-
-    # Set the modified timestamp on the output binary, typically
-    # you would do this to ensure a build was reproducible. Pass
-    # empty string to skip modifying the output.
-    # Default is empty string.
     mod_timestamp: '{{ .CommitTimestamp }}'
 
     # Hooks can be used to customize the final binary,
@@ -142,3 +121,66 @@ nfpms:
     bindir: "/usr/local/bin"
     formats: [ 'apk', 'deb', 'rpm' ]
     file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+
+brews:
+  - name: default
+    # GOARM to specify which 32-bit arm version to use if there are multiple versions
+    # from the build section. Brew formulas support atm only one 32-bit version.
+    # Default is 6 for all artifacts or each id if there a multiple versions.
+    goarm: 6
+
+    tap:
+      owner: bokysan
+      name: socketace-brew
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+
+    url_template: "http://github.mycompany.com/bokysan/socketace-brew/releases/{{ .Tag }}/{{ .ArtifactName }}"
+
+    # Allows you to set a custom download strategy. Note that you'll need
+    # to implement the strategy and add it to your tap repository.
+    # Example: https://docs.brew.sh/Formula-Cookbook#specifying-the-download-strategy-explicitly
+    # Default is empty.
+    # download_strategy: CurlDownloadStrategy
+
+    # Git author used to commit to the repository.
+    # Defaults are shown.
+    commit_author:
+      name: goreleaserbot
+      email: goreleaser@carlosbecker.com
+
+    # Folder inside the repository to put the formula.
+    # Default is the root folder.
+    # folder: Formula
+
+    # Caveats for the user of your binary.
+    # Default is empty.
+    # caveats: "How to use this binary"
+
+    # Your app's homepage.
+    # Default is empty.
+    homepage: "https://github.com/bokysan/socketace"
+
+    # Your app's description.
+    description: "Your ultimate connection proxy."
+
+    # Custom block for brew.
+    # Can be used to specify alternate downloads for devel or head releases.
+    # Default is empty.
+    custom_block: |
+      head "https://github.com/bokysan/socketace.git"
+
+    # Packages your package depends on.
+    #dependencies:
+    #  - name: git
+    #  - name: zsh
+    #    type: optional
+
+    # Packages that conflict with your package.
+    #conflicts:
+    #  - svn
+    #  - bash
+
+    # So you can `brew test` your formula.
+    # Default is empty.
+    test: |
+      system "#{bin}/socketace version"
