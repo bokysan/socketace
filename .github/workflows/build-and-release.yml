@@ -43,7 +43,7 @@ jobs:
             export TAGS="-t boky/socketace:latest"
             while [[ -n "$TAG" ]]; do
               TAGS="$TAGS -t boky/socketace:$TAG"
-              TAG=$(echo "$TAG" | rev | cut -d. -f2- | rev)
+              TAG="$(echo "$TAG" | rev | cut -d. -f2- | rev)"
             done
             echo "::set-env name=TAGS::$TAGS"
           else
@@ -87,6 +87,7 @@ jobs:
 
       - name: Prepare compilation for linux/amd64 only
         id: update_goreleaser_yml
+        if: github.ref == 'refs/heads/master'
         shell: bash
         run: |
           sed -i -e "s/^    goos:.*\$/    goos: [ 'linux' ]/" .goreleaser.yml
