@@ -30,27 +30,7 @@ jobs:
         id: extract_tag_names
         if: startsWith(github.ref, 'refs/tags/') && github.event_name != 'pull_request'
         shell: bash
-        # TODO: This code assumes that the most recent tag pushed is also the latest version of the app.
-        # This might not always be the case. What we would nedd to do is check if there are any semver
-        # tags in front of us and if so, do not set the laster-major-minor docker tags approperiately.
-        #
-        # Quick Google search did not find anything useful on the topic.
-        run: |
-          export TAG="${GITHUB_REF:10}"
-          if [[ "$TAG" == v* ]]; then
-            # Remove "v" from the beginning
-            TAG=$(echo "$TAG" | cut -c2-)
-            export TAGS="-t boky/socketace:latest"
-            while [[ -n "$TAG" ]]; do
-              TAGS="$TAGS -t boky/socketace:$TAG"
-              TAG="$(echo "$TAG" | rev | cut -d. -f2- | rev)"
-            done
-            echo "::set-env name=TAGS::$TAGS"
-          else
-            echo "::set-env name=DO_BUILD_TAG::"
-          fi
-
-          echo "::set-env name=DO_BUILD_TAG::1"
+        run: ./get-docker-tags.sh
 
       - name: Build tagged version
         id: build_tagged_version
