@@ -23,7 +23,7 @@ RUN true && \
     export GOARCH="$(echo "$TARGETPLATFORM" | cut -f2 -d/)" && \
     export GOARM="$(echo "$TARGETPLATFORM" | cut -f3 -d/ | sed -e 's/^v//')" && \
     export GOVERSION="$(go version)" && \
-    export GIT_BRANCH="$(git symbolic-ref --short HEAD)" && \
+    export GIT_BRANCH="$(git symbolic-ref --short HEAD 2>/dev/null || echo '')" && \
     sed -i -e "s/^    goos:.*\$/    goos: [ '$GOOS' ]/" .goreleaser.yml && \
     sed -i -e "s/^    goarch:.*\$/    goarch: [ '$GOARCH' ]/" .goreleaser.yml && \
     sed -i -e "s/^    goarm:.*\$/    goarm: [ '$GOARM' ]/" .goreleaser.yml && \
