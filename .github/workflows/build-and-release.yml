@@ -92,4 +92,5 @@ jobs:
           version: latest
           args: release --rm-dist --parallelism 10
         env:
+          HOMEBREW_TAP_GITHUB_TOKEN: '${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
