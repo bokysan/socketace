@@ -5,39 +5,30 @@ import (
 	"github.com/pkg/errors"
 )
 
-type ServerList []Server
+type Servers []Server
 
 type Server interface {
-	SetService(host *Service)
-	Execute(args []string) error
+	Startup(channels ChannelList) error
 	Shutdown() error
 }
 
-func NewServer(kind string) (Server, error) {
-	switch kind {
-	case "websocket":
-		return NewWebsocketServer(), nil
-	case "stdin":
-		return NewStdinServer(), nil
-	case "socket":
-		return NewSocketServer(), nil
-	}
-
-	return nil, errors.Errorf("Unknown server type: %s", kind)
+type AbstractServer struct {
+	Kind   string `json:"kind"`
+	secure bool
 }
 
-func (se *ServerList) UnmarshalFlag(value string) error {
+func (se *Servers) UnmarshalFlag(value string) error {
 	// Unmarshall from command line
 	return se.UnmarshalJSON([]byte(value))
 }
 
-func (se *ServerList) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (se *Servers) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	stuff := make([]interface{}, 0)
 	if err := unmarshal(&stuff); err != nil {
 		return errors.WithStack(err)
 	}
 
-	res := make(ServerList, 0)
+	res := make(Servers, 0)
 	for _, s := range stuff {
 		if server, err := unmarshalServer(s); err != nil {
 			return errors.WithStack(err)
@@ -50,13 +41,13 @@ func (se *ServerList) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func (se *ServerList) UnmarshalJSON(b []byte) error {
+func (se *Servers) UnmarshalJSON(b []byte) error {
 	stuff := make([]interface{}, 0)
 	if err := json.Unmarshal(b, &stuff); err != nil {
 		return errors.WithStack(err)
 	}
 
-	res := make(ServerList, 0)
+	res := make(Servers, 0)
 	for _, s := range stuff {
 		if server, err := unmarshalServer(s); err != nil {
 			return errors.WithStack(err)
@@ -77,9 +68,17 @@ func unmarshalServer(s interface{}) (Server, error) {
 
 	if val, ok := stuff["kind"]; ok {
 		if kind, ok := val.(string); ok {
-			server, err := NewServer(kind)
-			if err != nil {
-				return nil, errors.Wrapf(err,"Failed creating a server of kind: %s", kind)
+			var server Server
+
+			switch kind {
+			case "http", "https", "ws", "wss", "http+tls", "ws+tls":
+				server = NewHttpServer()
+			case "stdin", "stdin+tls":
+				server = NewStdioServer()
+			case "tcp", "unix", "unixpacket", "tcp+tls", "unix+tls", "unixpacket+tls":
+				server = NewSocketServer()
+			default:
+				return nil, errors.Errorf("Unknown server type: %s", kind)
 			}
 
 			data, err := json.Marshal(s)

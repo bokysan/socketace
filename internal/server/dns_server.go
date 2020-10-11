@@ -1,19 +1,16 @@
 package server
 
 import (
-	"github.com/bokysan/socketace/v2/internal/cert"
+	"github.com/bokysan/socketace/v2/internal/util/cert"
 	"net/http"
 )
 
 type DnsServer struct {
-	cert.Manager
-	cert.ClientAuthentication
+	cert.ServerConfig
 
-	Kind      string                `json:"kind"`
-	Listen    string                `json:"listen"`
-	Endpoints WebsocketEndpointList `json:"endpoints"`
+	Kind   string `json:"kind"`
+	Listen string `json:"listen"`
 
-	service       *Service
 	server        *http.Server
 	couldNotStart chan struct{}
 }

@@ -1,8 +1,7 @@
 package version
 
-
 const UnknownVersion = "unknown"
-const ProtocolVersion = "v1.0.0"
+const ProtocolVersion = "v2.0.0"
 
 // provided at compile time
 var (
@@ -14,7 +13,6 @@ var (
 	BuildDate  string // RFC3339 formatted UTC date, e.g. "2016-08-04T18:07:54Z"
 	Version    string // contents of ./VERSION file, if exists
 	GoVersion  string // the version of go, e.g. "go version go1.10.3 darwin/amd64"
-	ProtoVersion string = "v1.0.0"
 )
 
 func AppVersion() string {

@@ -1,0 +1,5 @@
+general:
+  experimental: true
+---
+general:
+  file: something.txt

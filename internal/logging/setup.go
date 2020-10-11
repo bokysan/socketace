@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+// SetupLogging will configure logging based on input parameters. It will look at `args.General` to
+// check how the logging should be setup.
 func SetupLogging() {
 	SetVerbosity(args.General.Verbose)
 
@@ -36,18 +38,18 @@ func SetupLogging() {
 		})
 	}
 	log.SetReportCaller(args.General.LogReportCaller)
-	log.Infof("Verbosity level: %v", VerbosityName())
+	log.Infof("Verbosity level: %v", log.GetLevel().String())
 
 	if args.General.LogFile != nil && len(*args.General.LogFile) > 0 && *args.General.LogFile != "-" {
 		f, err := os.OpenFile(*args.General.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 		util.MustErrorNilOrExit(errors.WithStack(err))
 		writer := bufio.NewWriter(f)
 		/*
-		writer := nbtee.NewWriter(1024 * 64)
-		writer.Add(f)
-		writer.Add(os.Stderr)
-		writer.Start()
-		 */
+			writer := nbtee.NewWriter(1024 * 64)
+			writer.Add(f)
+			writer.Add(os.Stderr)
+			writer.Start()
+		*/
 		log.SetOutput(writer)
 	}
 

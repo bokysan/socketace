@@ -1,13 +1,23 @@
 # SocketAce
 
-**Your ultimate connection proxy.** websocket proxy. secure sockets proxy.
+**Your ultimate connection tunnel.** TCP websocket tunnel. TLS sockets tunnel. One executable for the client and the
+server. Multiple platforms supported. Written in [go](https://golang.org).
 
-Ever had an issue with restrictive firewalls? Well, this tool will help out. This tool
-allows you to proxy *multiple* connections through:
+Ever had an issue with restrictive firewalls? Well, this tool will help out. Socketace allows you to tunnel *multiple* 
+connections through:
 - sockets
 - TLS-encrypted sockets (direct replacement for [stunnel](https://www.stunnel.org/))
 - websockets
 - TLS-encrypted websockets
+
+Socketace is mainly meant for restricted environments where the firewall won't allow you to open an SSH connection or
+even won't allow any other traffic other than on port 80 and 443. Socketace is also able to tunnel the connection
+through HTTP (websockets) so even firewalls that do deep packet inspection / proxy ports 80 and 443 should work fine.
+
+Unlike other solutions which use [`HTTP CONNECT`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/CONNECT) to
+establish connection, `socketace` will actually overlay the TCP over HTTP.
+
+**DISCLAIMER:** Please note that you are using socketace at your own risk.
 
 ## Contents
 
@@ -252,5 +262,10 @@ requests are welcome:
 - add proxying of UDP connections
 - add functionality similar to [sslh](https://github.com/yrutschle/sslh) to be able to
   "hide" the proxy and share the port with other services
-- add the possibility of proxying connections through DNS, similar to [iodine](https://github.com/yarrick/iodine)
-  works 
+- add the possibility of proxying connections through DNS, similar to how 
+  [iodine](https://github.com/yarrick/iodine) works 
+  
+## Similar projects
+
+There's [Chisel](https://github.com/jpillora/chisel) which tries to achieve about the same goal
+but goes about it in a bit of a diffrent way.

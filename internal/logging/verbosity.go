@@ -15,22 +15,3 @@ func SetVerbosity(v []bool) {
 	}
 	log.SetLevel(verbosity)
 }
-
-func VerbosityName() string {
-	switch log.GetLevel() {
-	case log.PanicLevel:
-		return "PANIC"
-	case log.FatalLevel:
-		return "FATAL"
-	case log.ErrorLevel:
-		return "ERROR"
-	case log.WarnLevel:
-		return "WARN"
-	case log.InfoLevel:
-		return "INFO"
-	case log.DebugLevel:
-		return "DEBUG"
-	default:
-		return "TRACE"
-	}
-}

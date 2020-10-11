@@ -3,6 +3,7 @@ module github.com/bokysan/socketace/v2
 go 1.14
 
 require (
+	bou.ke/monkey v1.0.2
 	github.com/davecgh/go-spew v1.1.1
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/goccy/go-yaml v1.8.1
@@ -14,8 +15,9 @@ require (
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.6.0
+	github.com/stretchr/testify v1.4.0
+	github.com/xtaci/smux v1.5.14
 	github.com/youmark/pkcs8 v0.0.0-20200520070018-fad002e585ce
-	golang.org/x/mod v0.3.0
 	golang.org/x/net v0.0.0-20200822124328-c89045814202 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 )
