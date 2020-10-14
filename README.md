@@ -280,13 +280,13 @@ provides different server setups.
 ##### Use socketace as a simple telnet client  
 
 ```shell script
-socketace client -k --upstream tcp+tls://server.example.com:80 --upstream https://server.example.com/proxy --listen smtp~stdin
+socketace client -k --upstream tcp+tls://server.example.com:80 --upstream https://server.example.com/proxy --listen smtp~stdin://
 ```
 
 ##### Use socketace to SSH to your server from anywhere
 
 ```shell script
-ssh localhost -o ProxyCommand='socketace client --upstream http://127.0.0.1:9999/ws/all --listen ssh~stdin'
+ssh localhost -o ProxyCommand='socketace client --upstream http://127.0.0.1:9999/ws/all --listen ssh~stdin://'
 ```
 
 ##### Use socketace to proxy IMAP and SMTP
