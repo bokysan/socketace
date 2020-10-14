@@ -13,13 +13,14 @@ import (
 )
 
 type SocketServer struct {
-	AbstractServer
 	cert.ServerConfig
 
+	Network  string   `json:"network"`
 	Listen   string   `json:"listen"`
 	Channels []string `json:"channels"`
 
-	upstreams ChannelList
+	secure    bool
+	upstreams Channels
 	network   string
 	listener  net.Listener
 	done      bool
@@ -30,11 +31,11 @@ func NewSocketServer() *SocketServer {
 }
 
 func (st *SocketServer) String() string {
-	return fmt.Sprintf("%s://%s", st.Kind, st.Listen)
+	return fmt.Sprintf("%s://%s", st.Network, st.Listen)
 }
 
 //goland:noinspection GoUnusedParameter
-func (st *SocketServer) Startup(channels ChannelList) error {
+func (st *SocketServer) Startup(channels Channels) error {
 	var errs error
 	if upstreams, err := channels.Filter(st.Channels); err != nil {
 		return errors.WithStack(errs)
@@ -42,11 +43,10 @@ func (st *SocketServer) Startup(channels ChannelList) error {
 		st.upstreams = upstreams
 	}
 
-	if strings.HasSuffix(st.Kind, "+tls") {
-		st.network = st.Kind[:len(st.Kind)-4]
+	if strings.HasSuffix(st.Network, "+tls") {
+		st.Network = st.Network[:len(st.Network)-4]
 		st.secure = true
 	} else {
-		st.network = st.Kind
 		st.secure = false
 	}
 

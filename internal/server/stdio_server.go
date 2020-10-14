@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"github.com/bokysan/socketace/v2/internal/streams"
+	"github.com/bokysan/socketace/v2/internal/util/addr"
 	"github.com/bokysan/socketace/v2/internal/util/cert"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -11,27 +12,33 @@ import (
 	"os"
 )
 
-type StdioServer struct {
-	AbstractServer
+type IoServer struct {
 	cert.ServerConfig
 
-	Channels []string `json:"channels"`
+	Address  *addr.ProtoAddress `json:"address"`
+	Channels []string           `json:"channels"`
 
-	upstreams ChannelList
+	Input  io.ReadCloser
+	Output io.WriteCloser
 
+	secure     bool
+	upstreams  Channels
 	connection io.ReadWriteCloser
 }
 
-func NewStdioServer() *StdioServer {
-	return &StdioServer{}
+func NewIoServer() *IoServer {
+	return &IoServer{
+		Input:  os.Stdin,
+		Output: os.Stdout,
+	}
 }
 
-func (st *StdioServer) String() string {
-	return fmt.Sprintf("%s://%s", st.Kind)
+func (st *IoServer) String() string {
+	return fmt.Sprintf("%s", st.Address)
 }
 
 //goland:noinspection GoUnusedParameter
-func (st *StdioServer) Startup(channels ChannelList) error {
+func (st *IoServer) Startup(channels Channels) error {
 
 	var errs error
 	if upstreams, err := channels.Filter(st.Channels); err != nil {
@@ -44,37 +51,49 @@ func (st *StdioServer) Startup(channels ChannelList) error {
 	var err error
 	var stream streams.Connection
 
-	inputOuput := streams.NewReadWriteCloser(os.Stdin, os.Stdout)
+	inputOuput := streams.NewReadWriteCloser(st.Input, st.Output)
 
 	stream = streams.NewSimulatedConnection(inputOuput,
-		&streams.StandardIOAddress{Address: "input"},
-		&streams.StandardIOAddress{Address: "output"},
+		&streams.StandardIOAddress{Address: "server-input"},
+		&streams.StandardIOAddress{Address: "server-output"},
 	)
 
-	if streams.HasTls.MatchString(st.Kind) {
+	var tlsConfig *tls.Config
+	if streams.HasTls.MatchString(st.Address.Scheme) {
 		log.Infof("Starting TLS stdio server at %s", st)
 
 		secure = true
-		var tlsConfig *tls.Config
 		if tlsConfig, err = st.ServerConfig.GetTlsConfig(); err != nil {
 			return errors.Wrapf(err, "Could not configure TLS")
 		}
-		tlsConn := tls.Server(stream, tlsConfig)
-
-		if err = tlsConn.Handshake(); err != nil {
-			return errors.WithStack(err)
-		}
-		stream = streams.NewSafeConnection(tlsConn)
 	} else {
+		st.Address.Scheme = "stdio"
 		log.Infof("Starting plain stdio server at %s", st)
 
 	}
 
-	stream = streams.NewNamedConnection(stream, "stdin")
-	return AcceptConnection(stream, &st.ServerConfig, secure, st.upstreams)
+	go func() {
+		if tlsConfig != nil {
+			log.Tracef("[Server] Executing TLS handshake...")
+			tlsConn := tls.Server(stream, tlsConfig)
+			if err = tlsConn.Handshake(); err != nil {
+				log.WithError(err).Errorf("Error executing TLS handshake: %v", err)
+				return
+			}
+			log.Debugf("[Server] Connection encrypted using TLS")
+			stream = streams.NewNamedConnection(tlsConn, "tls")
+		}
+		stream = streams.NewNamedConnection(stream, "stdin")
+
+		if err := AcceptConnection(stream, &st.ServerConfig, secure, st.upstreams); err != nil {
+			log.WithError(err).Errorf("Error accepting connection: %v", err)
+		}
+	}()
+
+	return nil
 }
 
-func (st *StdioServer) Shutdown() error {
+func (st *IoServer) Shutdown() error {
 	if st.connection != nil {
 		err := streams.LogClose(st.connection)
 		return err

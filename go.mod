@@ -4,6 +4,7 @@ go 1.14
 
 require (
 	bou.ke/monkey v1.0.2
+	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/davecgh/go-spew v1.1.1
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/goccy/go-yaml v1.8.1

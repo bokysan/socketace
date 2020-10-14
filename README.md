@@ -19,6 +19,44 @@ establish connection, `socketace` will actually overlay the TCP over HTTP.
 
 **DISCLAIMER:** Please note that you are using socketace at your own risk.
 
+SocketAce will use *one pyhiscal connection* and overlay multiple *logical connections* within that connection:
+
+```
+
+   LAYER            CLIENT                        TUNNEL                          SERVER
++--------------+  
+| LOGICAL      |    Map channels and listen on:                                   Set up channels forward to:
++--------------+    - TCP socket                                                  - TCP socket
+                    - Unix socket                                                 - Unix socket
+                    - standard input/output
++--------------+
+| CHANNEL      |                   <- PICK PROPER CHANNEL / SERVICE ->
++--------------+
++--------------+
+| MULTIPLEX    |            <- MULTIPLEX MULTIPLE CONNECTIONS OVER ONE CONNECTION  ->
++--------------+
++--------------+
+| SECURITY     |                  <- SECURE CONNECTION VIA STARTTLS  ->
++--------------+
++--------------+
+| CONNECTIVITY |                                  Tunnel via via:
++--------------+                                  - simple sockets (TCP or Unix)
+                                                  - TLS-encrypted sockets (TCP or Unix)
+                                                  - websockets on plain HTTP
+                                                  - websockets on TLS-encrpyted HTTPS
+                                                  - standard input/output
+```
+
+This allows you to do wild combinations, such as:
+- listen on a local TCP socket, forward connection via SSH + standard in/out to remote server to a Unix socket 
+  (e.g. `rsync -essh` works)
+- listen on a local TCP socket, wrap the connection TLS and forward to a service on a remote server 
+  (i.e. replicate what `stunnel` does) 
+- listen on a local standard in/out, forward to remote service via websocket
+  (i.e. "expose ssh via websockets")
+- 
+
+
 ## Contents
 
 1. [Rationale](#rationale)
@@ -32,8 +70,8 @@ establish connection, `socketace` will actually overlay the TCP over HTTP.
     1. [Synopsis](#synopsis)
     1. [Description](#description)
     1. [Examples](#examples)
-    1. [See also](#see-also)
 1. [TO-DO](#to-do)
+1. [Similar projects](#similar-projects)
 
 ## Rationale
 
@@ -232,7 +270,7 @@ two options are important:
 
 #### Server setup
 
-The easiest way to setup a server is with a YAML file. The `examples` directory contains a configuration which
+The easiest way to set up a server is with a YAML file. The `examples` directory contains a configuration which
 provides different server setups.
 
 #### Client setup

@@ -41,12 +41,12 @@ func NewServerConnection(c net.Conn, manager cert.TlsConfig, secure bool) (*Serv
 		connection.securityTech = SecurityNone
 	}
 
-	log.Debugf("[Server] Handshake...")
+	log.Debugf("[Server] SocketAce handshake...")
 	if err := connection.handshake(conn); err != nil {
 		return nil, errors.Wrapf(err, "Could not negotiate protocol version: %v", err)
 	}
 
-	log.Debugf("[Server] Upgrade...")
+	log.Debugf("[Server] SocketAce upgrade...")
 	if server, err := connection.upgrade(conn); err != nil {
 		return nil, errors.Wrapf(err, "Could not upgrade connection: %v", err)
 	} else {
@@ -134,7 +134,7 @@ func (sc *ServerConnection) handshake(conn *streams.BufferedInputConnection) err
 				sc.supportTls = true
 				capabilities = append(capabilities, CapabilityStartTls)
 			} else {
-				log.Tracef("No certificates, will not advrtise StartTLS.")
+				log.Infof("No certificates, will not advrtise StartTLS.")
 			}
 		} else {
 			log.Tracef("No certificate manager. Will not be able to secure the connection.")
@@ -243,16 +243,19 @@ func (sc *ServerConnection) upgrade(conn *streams.BufferedInputConnection) (stre
 					log.WithError(e).Warnf("Could not write response: %v", e)
 				}
 
+				log.Tracef("[Server] Executing TLS handshake")
 				tlsConn := tls.Server(conn, config)
 				if err := tlsConn.Handshake(); err != nil {
 					log.WithError(err).Errorf("TLS handshake failed: %v", err)
 					return nil, err
 				}
+				log.Debugf("[Server] Connection encrypted using TLS")
 
 				sc.secure = true
 				sc.securityTech = SecurityTls
 
-				return streams.NewNamedConnection(tlsConn, "tls"), nil
+				stream := streams.NewNamedConnection(tlsConn, "tls")
+				return streams.NewNamedConnection(stream, "plain"), nil
 			}
 		} else {
 			response = &Response{

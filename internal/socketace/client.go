@@ -42,15 +42,15 @@ func NewClientConnection(c net.Conn, manager cert.TlsConfig, secure bool, host s
 		connection.securityTech = SecurityNone
 	}
 
-	log.Debugf("[Client] Handshake...")
+	log.Debugf("[Client] SocketAce handshake...")
 	if err := connection.handshake(conn); err != nil {
 		return nil, errors.Wrapf(err, "Could not negotiate protocol version: %v", err)
 	}
 
 	shouldStartTls := !secure && connection.containsCapability(connection.capabilities, CapabilityStartTls)
 
-	log.Debugf("[Client] Upgrade...")
-	if client, err := connection.upgrade(conn, shouldStartTls); err != nil {
+	log.Debugf("[Client] SocketAce upgrade...")
+	if client, err := connection.upgrade(conn, shouldStartTls, secure); err != nil {
 		return nil, errors.Wrapf(err, "Could not upgrade connection: %v", err)
 	} else {
 		connection.Connection = client
@@ -114,7 +114,8 @@ func (cc *ClientConnection) handshake(conn *streams.BufferedInputConnection) (er
 }
 
 // upgrade will upgrade the connection and negotiate the security protocol
-func (cc *ClientConnection) upgrade(conn *streams.BufferedInputConnection, shouldStartTls bool) (streams.Connection, error) {
+func (cc *ClientConnection) upgrade(conn *streams.BufferedInputConnection, shouldStartTls bool, secure bool) (streams.Connection, error) {
+
 	// Upgrade the connection now
 	request := &Request{
 		Method:  "GET",
@@ -150,13 +151,17 @@ func (cc *ClientConnection) upgrade(conn *streams.BufferedInputConnection, shoul
 			err = errors.Errorf("Could not establish a secure connection: %v", err)
 			return nil, err
 		}
-		log.Infof("Connected TLS to server %v at %v", response.Headers.Get("Server"), client.RemoteAddr().String())
+		log.Infof("[Client] (Secure) Connected StartTLS-secured to server %v at %v", response.Headers.Get("Server"), client.RemoteAddr().String())
 		cc.secure = true
 		cc.securityTech = SecurityTls
 		return streams.NewNamedConnection(client, "tls"), err
 	}
 
-	log.Infof("Connected (non-secure) to server %v at %v", response.Headers.Get("Server"), conn.RemoteAddr().String())
+	if secure {
+		log.Infof("[Client] (Secure) Connected (non-StartTLS) to server %v at %v.", response.Headers.Get("Server"), conn.RemoteAddr().String())
+	} else {
+		log.Warnf("[Client] (Insecure) Connected (non-StartTLS) to server %v at %v.", response.Headers.Get("Server"), conn.RemoteAddr().String())
+	}
 	return streams.NewNamedConnection(conn, "plain"), nil
 }
 
@@ -175,11 +180,12 @@ func (cc *ClientConnection) startTls(conn streams.Connection) (streams.Connectio
 	}
 	tlsConfig.ServerName = cc.host
 
+	log.Tracef("[Client] Executing TLS handshake")
 	tlsConn := tls.Client(conn, tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
 		return nil, errors.Wrapf(err, "StartTLS handshake failed: %v", err)
 	}
-
+	log.Debugf("[Client] Connection encrypted using TLS")
 	return streams.NewNamedConnection(tlsConn, "tls"), nil
 }
 

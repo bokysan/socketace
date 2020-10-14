@@ -75,7 +75,7 @@ func (sar *Response) Write(c io.Writer) error {
 	if _, err := c.Write([]byte(sar.String())); err != nil {
 		return errors.Wrapf(err, "Could not write to stream")
 	}
-	log.Debugf("Response writen: %v", sar)
+	log.Debugf("Response writen:\n%v", sar)
 	return nil
 }
 
@@ -96,6 +96,6 @@ func (sar *Response) Read(c *bufio.Reader) error {
 	sar.Status = strconv.Itoa(statusCode) + " " + message
 	sar.Headers = headers
 
-	log.Debugf("Response read: %v", sar)
+	log.Debugf("Response read:\n%v", sar)
 	return nil
 }

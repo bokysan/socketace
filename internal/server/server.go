@@ -8,13 +8,8 @@ import (
 type Servers []Server
 
 type Server interface {
-	Startup(channels ChannelList) error
+	Startup(channels Channels) error
 	Shutdown() error
-}
-
-type AbstractServer struct {
-	Kind   string `json:"kind"`
-	secure bool
 }
 
 func (se *Servers) UnmarshalFlag(value string) error {
@@ -66,19 +61,19 @@ func unmarshalServer(s interface{}) (Server, error) {
 		return nil, errors.Errorf("Invalid type. Expected map[string]interface{}, got: %+v", stuff)
 	}
 
-	if val, ok := stuff["kind"]; ok {
-		if kind, ok := val.(string); ok {
+	if val, ok := stuff["network"]; ok {
+		if network, ok := val.(string); ok {
 			var server Server
 
-			switch kind {
+			switch network {
 			case "http", "https", "ws", "wss", "http+tls", "ws+tls":
 				server = NewHttpServer()
 			case "stdin", "stdin+tls":
-				server = NewStdioServer()
+				server = NewIoServer()
 			case "tcp", "unix", "unixpacket", "tcp+tls", "unix+tls", "unixpacket+tls":
 				server = NewSocketServer()
 			default:
-				return nil, errors.Errorf("Unknown server type: %s", kind)
+				return nil, errors.Errorf("Unknown server type: %s", network)
 			}
 
 			data, err := json.Marshal(s)

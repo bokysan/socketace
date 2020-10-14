@@ -15,7 +15,7 @@ import (
 // ListenList is a list of Listener objects.
 type ListenList []*Listener
 
-func (ll *ListenList) StartListening(connector upstream.Connector, config cert.ConfigGetter) error {
+func (ll *ListenList) StartListening(connector *upstream.Upstreams, config cert.ConfigGetter) error {
 	var errs error
 	log.Debugf("Start listening on %v listeners", len(*ll))
 	for _, l := range *ll {
@@ -52,14 +52,14 @@ func (ll *ListenList) UnmarshalFlag(data string) error {
 		if addr, err := addr.ParseAddress(parts[1]); err != nil {
 			return err
 		} else {
-			l.Address.ProtoAddress = addr
+			l.Address = addr
 		}
 
 		if len(parts) >= 3 {
 			if addr, err := addr.ParseAddress(parts[2]); err != nil {
 				return err
 			} else {
-				l.Forward.ProtoAddress = addr
+				l.Forward = addr
 			}
 		}
 
@@ -85,15 +85,15 @@ type ProtocolListener interface {
 
 func NewProtocolListener(listener *Listener) (ProtocolListener, error) {
 	var l ProtocolListener
-	addr := listener.Address.ProtoAddress
-	switch addr.Network {
+	addr := listener.Address
+	switch addr.Scheme {
 	case "stdin":
 		l = &StdInProtocolListener{
 			listener: listener,
 		}
 
 	case "udp", "udp4", "udp6", "unixgram":
-		return l, errors.Errorf("Packet connections (%v) are not yet supported", addr.Network)
+		return l, errors.Errorf("Packet connections (%v) are not yet supported", addr.Scheme)
 	default:
 		l = &StreamProtocolListener{
 			listener: listener,
@@ -110,25 +110,21 @@ func NewProtocolListener(listener *Listener) (ProtocolListener, error) {
 type Listener struct {
 	addr.ProtoName `yaml:",inline"`
 
-	Address struct {
-		addr.ProtoAddress `yaml:",inline"`
-	} `json:"address" description:"Connect a listening connection at this endpoint."`
-	Forward struct {
-		addr.ProtoAddress `yaml:",inline"`
-	} `json:"forward" description:"Try forwarding to this address first. Only valid for non-packet connections. (e.g. UDP not supported)"`
+	Address *addr.ProtoAddress `json:"address" description:"Connect a listening connection at this endpoint."`
+	Forward *addr.ProtoAddress `json:"forward" description:"Try forwarding to this address first. Only valid for non-packet connections. (e.g. UDP not supported)"`
 
-	connector        upstream.Connector
+	upstreams        *upstream.Upstreams
 	config           cert.ConfigGetter
 	protocolListener ProtocolListener
 }
 
 func (l *Listener) String() string {
-	return fmt.Sprintf("%s (%s)", l.Address.ProtoAddress.String(), l.Name)
+	return fmt.Sprintf("%s:%s", l.Name, l.Address.String())
 }
 
 // Starts opens the listening connection on specific network (e.g. TCP, STDIN, UNIX...)
-func (l *Listener) Start(connector upstream.Connector, config cert.ConfigGetter) (err error) {
-	l.connector = connector
+func (l *Listener) Start(upstreams *upstream.Upstreams, config cert.ConfigGetter) (err error) {
+	l.upstreams = upstreams
 	l.config = config
 
 	log.Infof("Listener on %p %v", l, l.String())
@@ -136,12 +132,12 @@ func (l *Listener) Start(connector upstream.Connector, config cert.ConfigGetter)
 	log.Debugf("... %p = %v -> %v", l.protocolListener, l.protocolListener, l)
 
 	if err != nil {
-		return errors.Wrapf(err, "Could not listen on %s://%s", l.Address.Network, l.Address.Address)
+		return errors.Wrapf(err, "Could not listen on %s", l.Address)
 	}
 
 	go l.protocolListener.Accept()
 
-	err = errors.Wrapf(err, "Could not listen on %s://%s", l.Address.Network, l.Address.Address)
+	err = errors.Wrapf(err, "Could not listen on %s", l.Address)
 	return
 }
 
@@ -149,7 +145,7 @@ func (l *Listener) Start(connector upstream.Connector, config cert.ConfigGetter)
 func (l *Listener) Shutdown() (err error) {
 	if l.protocolListener != nil {
 		err = l.protocolListener.Shutdown()
-		err = errors.Wrapf(err, "Failed closing down listener for %s %s", l.Address.Network, l.Address.Address)
+		err = errors.Wrapf(err, "Failed closing down listener for %s", l.Address)
 		l.protocolListener = nil
 	}
 	return

@@ -1,32 +1,27 @@
 server:
   channels:
     - name: ssh
-      network: tcp
-      address: 127.0.0.1:22
+      address: tcp://127.0.0.1:22
     - name: www
-      network: tcp
-      address: www.google.com:80
+      address: tcp://www.google.com:80
     #- name: socks
-    #  type: socks
+    #  kind: socks
   servers:
       # Simple HTTP (websocket) proxy. No security. Expose specific channels only
-    - kind: http
-      listen: 127.0.0.1:9999
+    - address: http://127.0.0.1:9999
       endpoints:
         - channels: [ 'ssh', 'www' ]
           endpoint: /ws/all
 
       # Simple HTTP (websocket) proxy. No security. Expose ssh channel on /ws/ssh and everything on /ws/everything.
-    - kind: http
-      listen: 127.0.0.1:9998
+    - address: http://127.0.0.1:9998
       endpoints:
         - channels: [ 'ssh' ]
           endpoint: /ws/ssh
         - endpoint: /ws/everything
 
       # Simple HTTPS (websocket) proxy. Secured by TLS.
-    - kind: https
-      listen: 127.0.0.1:9997
+    - address: https://127.0.0.1:9997
       #
       # *** BIG FAT WARNING ***
       #
@@ -42,8 +37,7 @@ server:
         - endpoint: /ws/all
 
       # Simple HTTP (websocket) proxy. Secured by StartTLS.
-    - kind: http
-      listen: 127.0.0.1:9996
+    - address: http://127.0.0.1:9996
       #
       # *** BIG FAT WARNING ***
       #
@@ -59,12 +53,10 @@ server:
         - endpoint: /ws/all
 
       # Simple socket proxy. No security. Expose all channels.
-    - kind: tcp
-      listen: 127.0.0.1:9995
+    - address: tcp://127.0.0.1:9995
 
       # Simple socket proxy. Secure by directly encrypting the socket.
-    - kind: tcp+tls
-      listen: 127.0.0.1:9994
+    - address: tcp+tls://127.0.0.1:9994
       #
       # *** BIG FAT WARNING ***
       #
@@ -78,8 +70,7 @@ server:
       privateKeyPassword: test1234
 
       # Simple socket proxy. Secured by StartTLS.
-    - kind: tcp
-      listen: 127.0.0.1:9993
+    - address: tcp://127.0.0.1:9993
       #
       # *** BIG FAT WARNING ***
       #
@@ -93,7 +84,7 @@ server:
       privateKeyPassword: test1234
 
       # Simple socket proxy. Secured by StartTLS.
-    - kind: stdin
+    - address: "stdin:"
       #
       # *** BIG FAT WARNING ***
       #

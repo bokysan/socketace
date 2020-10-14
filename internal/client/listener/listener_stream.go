@@ -1,6 +1,7 @@
 package listener
 
 import (
+	"fmt"
 	"github.com/bokysan/socketace/v2/internal/streams"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -16,9 +17,9 @@ type StreamProtocolListener struct {
 }
 
 func (spl *StreamProtocolListener) Listen() (err error) {
-	addr := spl.listener.Address.ProtoAddress
+	addr := spl.listener.Address
 	spl.shutdown = make(chan bool, 1)
-	spl.netListener, err = net.Listen(addr.Network, addr.Address)
+	spl.netListener, err = net.Listen(addr.Scheme, addr.Host)
 	return
 }
 
@@ -66,12 +67,11 @@ func (spl *StreamProtocolListener) handleConnection(conn net.Conn) {
 	if spl.connectDirectly(conn) {
 		return
 	}
-	upstream, err := spl.listener.connector.Connect(spl.listener.config, spl.listener.Name)
+	upstream, err := spl.listener.upstreams.Connect(spl.listener.config, spl.listener.Name)
 	if err != nil {
 		log.WithError(err).Warnf("Communication for %s with upstream failed: %v", spl.listener.Name, err)
 	} else {
-		upstream = streams.NewNamedStream(upstream, spl.listener.Name)
-		stream := streams.NewNamedStream(conn, conn.RemoteAddr().String())
+		stream := streams.NewNamedStream(conn, "->"+conn.RemoteAddr().String())
 		err = streams.PipeData(stream, upstream)
 		if err != nil {
 			log.WithError(err).Warnf("Communication for %s with upstream failed: %v", spl.listener.Name, err)
@@ -85,23 +85,26 @@ func (spl *StreamProtocolListener) handleConnection(conn net.Conn) {
 
 func (spl *StreamProtocolListener) connectDirectly(conn net.Conn) bool {
 	forward := spl.listener.Forward
-	proto := forward.Network
-	addr := forward.Address
-	if addr != "" && proto != "" {
-		log.Debugf("Dialing direct connection to %s %s", proto, addr)
-		var upstream net.Conn
-		upstream, err := net.Dial(proto, addr)
-		if err == nil {
-			upstream = streams.NewNamedConnection(upstream, proto+"://"+addr)
-			err = streams.PipeData(conn, upstream)
-			if err != nil {
-				err = errors.WithStack(err)
-				log.WithError(err).Warnf("Error while communicating %s with %s %s: %+v",
-					spl.listener.Name, proto, addr, err,
-				)
-			}
-			return true
-		}
+	if forward == nil {
+		return false
 	}
+	if forward.Host == "" || forward.Scheme == "" {
+		return false
+	}
+	log.Debugf("Dialing direct connection to %s %s", forward.Scheme, forward.Host)
+	var upstream net.Conn
+	upstream, err := net.Dial(forward.Scheme, forward.Host)
+	if err == nil {
+		upstream = streams.NewNamedConnection(upstream, fmt.Sprintf("%v", forward))
+		err = streams.PipeData(conn, upstream)
+		if err != nil {
+			err = errors.WithStack(err)
+			log.WithError(err).Warnf("Error while communicating %s with %s %s: %+v",
+				spl.listener.Name, forward.Scheme, forward.Host, err,
+			)
+		}
+		return true
+	}
+
 	return false
 }

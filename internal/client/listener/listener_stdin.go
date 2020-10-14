@@ -18,11 +18,11 @@ type StdInProtocolListener struct {
 // Listen will directly open up standard input/output and connect to the remote server directly
 func (spl *StdInProtocolListener) Listen() error {
 	// Connect to the upstream server
-	upstream, err := spl.listener.connector.Connect(spl.listener.config, spl.listener.Name)
+	upstream, err := spl.listener.upstreams.Connect(spl.listener.config, spl.listener.Name)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	spl.upstream = streams.NewNamedStream(upstream, spl.listener.Address.String())
+	spl.upstream = upstream
 
 	return nil
 }
@@ -30,7 +30,7 @@ func (spl *StdInProtocolListener) Listen() error {
 func (spl *StdInProtocolListener) Accept() {
 	var pipe io.ReadWriteCloser
 	pipe = streams.NewReadWriteCloser(os.Stdin, os.Stdout)
-	pipe = streams.NewNamedStream(pipe, "stdin")
+	pipe = streams.NewNamedStream(pipe, "->stdin")
 
 	err := errors.WithStack(streams.PipeData(pipe, spl.upstream))
 	if err != nil {

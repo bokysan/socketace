@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"github.com/bokysan/socketace/v2/internal/args"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"github.com/youmark/pkcs8"
 	_ "github.com/youmark/pkcs8"
 	"io/ioutil"
@@ -35,7 +36,7 @@ type Config struct {
 // ClientConfig is the certificate configuration with client-specific extensions
 type ClientConfig struct {
 	Config
-	Insecure bool `json:"insecure" short:"k" long:"insecure"  env:"INSECURE" description:"Allows insecure connections"`
+	InsecureSkipVerify bool `json:"insecure" short:"k" long:"insecure"  env:"INSECURE" description:"Allows insecure connections"`
 }
 
 // ServerConfig is the certificate configuration with server-specific extensions
@@ -215,10 +216,12 @@ func (m *Config) GetTlsConfig() (*tls.Config, error) {
 }
 
 func (m *ClientConfig) GetTlsConfig() (conf *tls.Config, err error) {
+	log.Debugf("ClientConfig.GetTlsConfig(), InsecureSkipVerify=%v", m.InsecureSkipVerify)
+
 	conf, err = m.Config.GetTlsConfig()
 
-	if err != nil {
-		if m.Insecure {
+	if err == nil {
+		if m.InsecureSkipVerify {
 			conf.InsecureSkipVerify = true
 		}
 	}
@@ -227,6 +230,7 @@ func (m *ClientConfig) GetTlsConfig() (conf *tls.Config, err error) {
 }
 
 func (m *ServerConfig) GetTlsConfig() (conf *tls.Config, err error) {
+	log.Debug("ServerConfig.GetTlsConfig()")
 	conf, err = m.Config.GetTlsConfig()
 
 	if err != nil {

@@ -18,13 +18,13 @@ import (
 )
 
 type HttpServer struct {
-	AbstractServer
 	cert.ServerConfig
 
+	Network   string                `json:"network"`
 	Listen    string                `json:"listen"`
 	Endpoints WebsocketEndpointList `json:"endpoints"`
 
-	network       string
+	secure        bool
 	server        *http.Server
 	couldNotStart chan struct{}
 }
@@ -48,7 +48,7 @@ func (ws *HttpServer) String() string {
 	}
 }
 
-func (ws *HttpServer) EndpointHandler(ep *HttpEndpoint, upstreams ChannelList) (http.HandlerFunc, error) {
+func (ws *HttpServer) EndpointHandler(ep *HttpEndpoint, upstreams Channels) (http.HandlerFunc, error) {
 	var upgrader = websocket.Upgrader{
 		EnableCompression: ep.EnableCompression,
 	} // use default options
@@ -73,7 +73,7 @@ func (ws *HttpServer) EndpointHandler(ep *HttpEndpoint, upstreams ChannelList) (
 }
 
 //noinspection GoUnusedParameter
-func (ws *HttpServer) Startup(channels ChannelList) error {
+func (ws *HttpServer) Startup(channels Channels) error {
 	var errs error
 
 	address, err := addr.ResolveHostAddress(ws.Listen)
@@ -118,14 +118,14 @@ func (ws *HttpServer) Startup(channels ChannelList) error {
 		Handler: router,
 	}
 
-	if streams.HasTls.MatchString(ws.Kind) {
-		ws.network = ws.Kind[:len(ws.Kind)-4]
+	if streams.HasTls.MatchString(ws.Network) {
+		ws.Network = ws.Network[:len(ws.Network)-4]
 		ws.secure = true
-	} else if ws.Kind == "https" || ws.Kind == "wss" {
-		ws.network = "http"
+	} else if ws.Network == "https" || ws.Network == "wss" {
+		ws.Network = "https"
 		ws.secure = true
 	} else {
-		ws.network = "http"
+		ws.Network = "http"
 		ws.secure = false
 	}
 

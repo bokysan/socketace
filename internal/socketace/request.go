@@ -76,7 +76,7 @@ func (sar *Request) Write(c io.Writer) error {
 		return errors.Wrapf(err, "Could not write to stream")
 	}
 
-	log.Debugf("Request written: %v", sar)
+	log.Debugf("Request written:\n%v", sar)
 	return nil
 }
 
@@ -97,6 +97,6 @@ func (sar *Request) Read(c *bufio.Reader) error {
 	sar.Proto = proto
 	sar.Headers = headers
 
-	log.Debugf("Request read: %v", sar)
+	log.Debugf("Request read:\n%v", sar)
 	return nil
 }

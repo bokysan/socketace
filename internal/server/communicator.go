@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-func AcceptConnection(conn net.Conn, manager cert.TlsConfig, secure bool, upstreams ChannelList) error {
+func AcceptConnection(conn net.Conn, manager cert.TlsConfig, secure bool, channels Channels) error {
 	log.Tracef("Establishing SocketAce connection...")
 	server, err := socketace.NewServerConnection(conn, manager, secure)
 	if err != nil {
@@ -28,7 +28,7 @@ func AcceptConnection(conn net.Conn, manager cert.TlsConfig, secure bool, upstre
 	}
 
 	connectionHandler := &ConnectionHandler{
-		upstreams: upstreams,
+		channels: channels,
 	}
 	if err := connectionHandler.HandleConnection(server); err != nil {
 		log.WithError(err).Errorf("Could not handle connection: %v", err)
@@ -43,8 +43,8 @@ func AcceptConnection(conn net.Conn, manager cert.TlsConfig, secure bool, upstre
 
 // ConnectionHandler will overlay a logical connection multiplexer over a pyhisical line
 type ConnectionHandler struct {
-	session   *smux.Session
-	upstreams ChannelList
+	session  *smux.Session
+	channels Channels
 }
 
 // Create a logical mutex session of a pyhisical link
@@ -69,8 +69,9 @@ func (ch *ConnectionHandler) HandleConnection(conn net.Conn) (err error) {
 func (ch *ConnectionHandler) acceptStream() {
 	for true {
 		// Wait for next available stream
-		stream, err := ch.session.AcceptStream()
+		var stream net.Conn
 
+		stream, err := ch.session.AcceptStream()
 		if err == io.ErrClosedPipe || err == io.EOF {
 			log.Debugf("Stream closed, existing loop.")
 			return
@@ -78,37 +79,36 @@ func (ch *ConnectionHandler) acceptStream() {
 			log.WithError(err).Errorf("Error accepting stream: %v", err)
 			continue
 		}
+		stream = streams.NewNamedConnection(stream, stream.RemoteAddr().String())
+		log.Debugf("[Server] New logical connection accepted: %v", stream)
 
-		if err = ch.multiplexToUpstream(stream, ch.upstreams); err != nil {
+		if err = ch.multiplexToUpstream(stream); err != nil {
 			log.WithError(err).Errorf("Error selecting multichannel stream: %v", err)
 			streams.TryClose(stream)
 		}
 	}
 }
 
-func (ch *ConnectionHandler) addMuxHandler(mux *multistream.MultistreamMuxer, upstream *Channel) {
-	handler := func(protocol string, downstreamConnection io.ReadWriteCloser) error {
-		switch upstream.Network {
-		case "udp", "udp4", "udp6", "unixgram":
-			return errors.Errorf("Packet connections (%v) are not yet supported", upstream.Network)
+func (ch *ConnectionHandler) muxHandler(protocol string, downstreamConnection io.ReadWriteCloser) error {
+	for _, channel := range ch.channels {
+		if protocol == "/"+channel.Name() {
+			log.Debugf("[Upstream] Opening connection to upstream: %v", channel)
+			upstreamConnection, err := channel.OpenConnection()
+			if err != nil {
+				return err
+			}
+			return streams.PipeData(downstreamConnection, upstreamConnection)
 		}
-
-		log.Debugf("Opening connection to upstream: %v", upstream)
-		upstreamConnection, err := upstream.OpenConnection()
-		if err != nil {
-			return err
-		}
-
-		return streams.PipeData(downstreamConnection, upstreamConnection)
 	}
-	mux.AddHandler("/"+upstream.Name, handler)
+	return errors.Errorf("Uknown protocol %s", protocol)
 }
 
 // Create a multistream to let the client choose an appropriate solution
-func (ch *ConnectionHandler) multiplexToUpstream(multiplexChannel io.ReadWriteCloser, upstreams ChannelList) error {
+func (ch *ConnectionHandler) multiplexToUpstream(multiplexChannel net.Conn) error {
 	mux := multistream.NewMultistreamMuxer()
-	for _, u := range upstreams {
-		ch.addMuxHandler(mux, u)
+	log.Tracef("[Server] Connection muxer created for %v", multiplexChannel)
+	for _, u := range ch.channels {
+		mux.AddHandler("/"+u.Name(), ch.muxHandler)
 	}
 
 	defer func() {
@@ -117,6 +117,7 @@ func (ch *ConnectionHandler) multiplexToUpstream(multiplexChannel io.ReadWriteCl
 		}
 	}()
 
+	log.Tracef("[Server] Handle channel %v", multiplexChannel)
 	if err := mux.Handle(multiplexChannel); err != nil {
 		err = errors.Wrapf(err, "Could not handle multiplex channel: %+v", err)
 		return err
