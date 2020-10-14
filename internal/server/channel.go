@@ -23,7 +23,7 @@ type Channel interface {
 
 type AbstractChannel struct {
 	addr.ProtoName `yaml:",inline"`
-	Kind           string `yaml:"kind"`
+	Address        *addr.ProtoAddress `json:"address"`
 }
 
 func (u *AbstractChannel) Name() string {
@@ -71,25 +71,24 @@ func (u *SocksChannel) OpenConnection() (net.Conn, error) {
 // Channel is a configuration of one of the server that are going to be multiplexed in the connection
 type NetworkChannel struct {
 	AbstractChannel
-	*addr.ProtoAddress `yaml:",inline"`
 }
 
 func (u *NetworkChannel) String() string {
-	return fmt.Sprintf("%v->%v", u.Name(), u.ProtoAddress)
+	return fmt.Sprintf("%v->%v", u.Name(), u.Address)
 }
 
 // OpenConnection will open a connection the the upstream server
 func (u *NetworkChannel) OpenConnection() (net.Conn, error) {
-	scheme := u.ProtoAddress.Scheme
+	scheme := u.Address.Scheme
 	switch scheme {
 	case "udp", "udp4", "udp6", "unixgram":
 		return nil, errors.Errorf("Packet connections (%v) are not yet supported", scheme)
 	}
 
-	conn, err := net.Dial(u.Scheme, u.Host)
+	conn, err := net.Dial(u.Address.Scheme, u.Address.Host)
 	if err != nil {
-		err = errors.Wrapf(err, "Remote connection failed to %v", u.ProtoAddress)
-		log.WithError(err).Errorf("Could not connect to %v: %+v", u.ProtoAddress, err)
+		err = errors.Wrapf(err, "Remote connection failed to %v", u.Address)
+		log.WithError(err).Errorf("Could not connect to %v: %+v", u.Address, err)
 	}
 	conn = streams.NewNamedConnection(conn, u.String())
 
@@ -167,8 +166,8 @@ func (chl *Channels) UnmarshalFlag(endpoint string) error {
 			ProtoName: addr.ProtoName{
 				Name: parts[0],
 			},
+			Address: address,
 		},
-		ProtoAddress: address,
 	}
 
 	*chl = append(*chl, e)
@@ -220,32 +219,36 @@ func unmarshalChannel(s interface{}) (Channel, error) {
 		return nil, errors.Errorf("Invalid type. Expected map[string]interface{}, got: %+v", stuff)
 	}
 
-	kind := "network"
+	var address *addr.ProtoAddress
 
-	if val, ok := stuff["kind"]; ok {
+	if val, ok := stuff["address"]; ok {
 		if k, ok := val.(string); ok {
-			kind = k
+			var err error
+			address, err = addr.ParseAddress(k)
+			if err != nil {
+				return nil, errors.Wrapf(err, "Could not parse '%s' as a valid address!", k)
+			}
 		}
 	}
 
 	var channel Channel
-	switch kind {
+	switch address.Scheme {
 	case "socks":
 		channel = &SocksChannel{}
-	case "network":
+	case "tcp", "unix", "unixpacket":
 		channel = &NetworkChannel{}
 	default:
-		return nil, errors.Errorf("Unknown channel type: %s", kind)
+		return nil, errors.Errorf("Unknown channel type: %s", address.Scheme)
 	}
 
 	data, err := json.Marshal(s)
 	if err != nil {
-		return nil, errors.Errorf("Failed marshalling data: %v", s)
+		return nil, errors.Wrapf(err, "Failed marshalling data: %v", s)
 	}
 
 	err = json.Unmarshal(data, channel)
 	if err != nil {
-		return nil, errors.Errorf("Failed unmarshalling data: %v", data)
+		return nil, errors.Wrapf(err, "Failed unmarshalling data: %v", string(data))
 	}
 
 	return channel, nil

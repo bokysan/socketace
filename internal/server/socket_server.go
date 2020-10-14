@@ -4,24 +4,24 @@ import (
 	"crypto/tls"
 	"fmt"
 	"github.com/bokysan/socketace/v2/internal/streams"
+	"github.com/bokysan/socketace/v2/internal/util/addr"
 	"github.com/bokysan/socketace/v2/internal/util/cert"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"net"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type SocketServer struct {
 	cert.ServerConfig
 
-	Network  string   `json:"network"`
-	Listen   string   `json:"listen"`
-	Channels []string `json:"channels"`
+	Address  *addr.ProtoAddress `json:"address"`
+	Channels []string           `json:"channels"`
 
 	secure    bool
 	upstreams Channels
-	network   string
 	listener  net.Listener
 	done      bool
 }
@@ -31,7 +31,13 @@ func NewSocketServer() *SocketServer {
 }
 
 func (st *SocketServer) String() string {
-	return fmt.Sprintf("%s://%s", st.Network, st.Listen)
+	var addr addr.ProtoAddress
+	addr = *st.Address
+	if st.secure {
+		addr.Scheme = addr.Scheme + "+tls"
+	}
+
+	return fmt.Sprintf("%s", addr.String())
 }
 
 //goland:noinspection GoUnusedParameter
@@ -43,34 +49,45 @@ func (st *SocketServer) Startup(channels Channels) error {
 		st.upstreams = upstreams
 	}
 
-	if strings.HasSuffix(st.Network, "+tls") {
-		st.Network = st.Network[:len(st.Network)-4]
+	if strings.HasSuffix(st.Address.Scheme, "+tls") {
+		st.Address.Scheme = st.Address.Scheme[:len(st.Address.Scheme)-4]
 		st.secure = true
 	} else {
 		st.secure = false
 	}
 
-	var err error
-	if st.secure {
-		var tlsConfig *tls.Config
-		if tlsConfig, err = st.ServerConfig.GetTlsConfig(); err != nil {
-			return errors.Wrapf(err, "Could not configure TLS")
+	startupErrors := make(chan error, 1)
+	go func() {
+		var err error
+		if st.secure {
+			var tlsConfig *tls.Config
+			if tlsConfig, err = st.ServerConfig.GetTlsConfig(); err != nil {
+				startupErrors <- errors.Wrapf(err, "Could not configure TLS")
+				return
+			}
+
+			log.Infof("Starting TLS socket server at %s", st)
+			if st.listener, err = tls.Listen(st.Address.Scheme, st.Address.Host, tlsConfig); err != nil && err != http.ErrServerClosed {
+				startupErrors <- errors.WithStack(err)
+				return
+			}
+		} else {
+			log.Infof("Starting plain socket server at %s", st)
+			if st.listener, err = net.Listen(st.Address.Scheme, st.Address.Host); err != nil && err != http.ErrServerClosed {
+				startupErrors <- errors.WithStack(err)
+				return
+			}
 		}
 
-		log.Infof("Starting TLS socket server at %s", st)
-		if st.listener, err = tls.Listen(st.network, st.Listen, tlsConfig); err != nil && err != http.ErrServerClosed {
-			return errors.WithStack(err)
-		}
-	} else {
-		log.Infof("Starting plain socket server at %s", st)
-		if st.listener, err = net.Listen(st.network, st.Listen); err != nil && err != http.ErrServerClosed {
-			return errors.WithStack(err)
-		}
+		st.acceptConnection()
+	}()
+
+	select {
+	case <-time.After(3 * time.Second):
+		return nil
+	case err := <-startupErrors:
+		return err
 	}
-
-	st.acceptConnection()
-
-	return nil
 }
 
 func (st *SocketServer) acceptConnection() {

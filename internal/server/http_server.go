@@ -20,8 +20,7 @@ import (
 type HttpServer struct {
 	cert.ServerConfig
 
-	Network   string                `json:"network"`
-	Listen    string                `json:"listen"`
+	Address   *addr.ProtoAddress    `json:"address"`
 	Endpoints WebsocketEndpointList `json:"endpoints"`
 
 	secure        bool
@@ -36,16 +35,9 @@ func NewHttpServer() *HttpServer {
 }
 
 func (ws *HttpServer) String() string {
-	if ws.server != nil {
-		protocol := "http"
-		if ws.server.TLSConfig != nil {
-			protocol += "s"
-		}
-
-		return fmt.Sprintf("%s://%s", protocol, ws.Listen)
-	} else {
-		return ""
-	}
+	var addr addr.ProtoAddress
+	addr = *ws.Address
+	return fmt.Sprintf("%s", addr.String())
 }
 
 func (ws *HttpServer) EndpointHandler(ep *HttpEndpoint, upstreams Channels) (http.HandlerFunc, error) {
@@ -76,7 +68,7 @@ func (ws *HttpServer) EndpointHandler(ep *HttpEndpoint, upstreams Channels) (htt
 func (ws *HttpServer) Startup(channels Channels) error {
 	var errs error
 
-	address, err := addr.ResolveHostAddress(ws.Listen)
+	address, err := addr.ResolveHostAddress(ws.Address.Host)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -114,41 +106,53 @@ func (ws *HttpServer) Startup(channels Channels) error {
 	}
 
 	ws.server = &http.Server{
-		Addr:    ws.Listen,
+		Addr:    ws.Address.Host,
 		Handler: router,
 	}
 
-	if streams.HasTls.MatchString(ws.Network) {
-		ws.Network = ws.Network[:len(ws.Network)-4]
+	if streams.HasTls.MatchString(ws.Address.Scheme) {
+		ws.Address.Scheme = ws.Address.Scheme[:len(ws.Address.Scheme)-4]
 		ws.secure = true
-	} else if ws.Network == "https" || ws.Network == "wss" {
-		ws.Network = "https"
+	} else if ws.Address.Scheme == "https" || ws.Address.Scheme == "wss" {
+		ws.Address.Scheme = "https"
 		ws.secure = true
 	} else {
-		ws.Network = "http"
+		ws.Address.Scheme = "http"
 		ws.secure = false
 	}
 
-	if ws.secure {
-		var tlsConfig *tls.Config
-		if tlsConfig, err = ws.ServerConfig.GetTlsConfig(); err != nil {
-			return errors.Wrapf(err, "Could not configure TLS")
-		}
+	startupErrors := make(chan error, 1)
+	go func() {
+		if ws.secure {
+			var tlsConfig *tls.Config
+			if tlsConfig, err = ws.ServerConfig.GetTlsConfig(); err != nil {
+				startupErrors <- errors.Wrapf(err, "Could not configure TLS")
+				return
+			}
 
-		ws.server.TLSConfig = tlsConfig
-		log.Infof("Starting HTTPS server at %s", ws)
-		if err := ws.server.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
-			return errors.WithStack(err)
-		}
+			ws.server.TLSConfig = tlsConfig
+			log.Infof("Starting HTTPS server at %v", ws)
+			if err := ws.server.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+				startupErrors <- errors.WithStack(err)
+				return
+			}
 
-	} else {
-		log.Infof("Starting HTTP server at %s", ws)
-		if err := ws.server.ListenAndServe(); err != http.ErrServerClosed {
-			return errors.WithStack(err)
+		} else {
+			log.Infof("Starting HTTP server at %v", ws)
+			if err := ws.server.ListenAndServe(); err != http.ErrServerClosed {
+				startupErrors <- errors.WithStack(err)
+				return
+			}
 		}
+	}()
+
+	select {
+	case <-time.After(3 * time.Second):
+		return nil
+	case err := <-startupErrors:
+		return err
 	}
 
-	return nil
 }
 
 func (ws *HttpServer) Shutdown() error {

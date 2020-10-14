@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"github.com/bokysan/socketace/v2/internal/util/addr"
 	"github.com/pkg/errors"
 )
 
@@ -61,19 +62,24 @@ func unmarshalServer(s interface{}) (Server, error) {
 		return nil, errors.Errorf("Invalid type. Expected map[string]interface{}, got: %+v", stuff)
 	}
 
-	if val, ok := stuff["network"]; ok {
-		if network, ok := val.(string); ok {
+	if val, ok := stuff["address"]; ok {
+		if a, ok := val.(string); ok {
+			address, err := addr.ParseAddress(a)
+			if err != nil {
+				return nil, errors.Wrapf(err, "Failed parsing address '%v'", a)
+			}
+
 			var server Server
 
-			switch network {
+			switch address.Scheme {
 			case "http", "https", "ws", "wss", "http+tls", "ws+tls":
 				server = NewHttpServer()
-			case "stdin", "stdin+tls":
+			case "stdin", "stdin+tls", "stdio", "stdio+tls":
 				server = NewIoServer()
 			case "tcp", "unix", "unixpacket", "tcp+tls", "unix+tls", "unixpacket+tls":
 				server = NewSocketServer()
 			default:
-				return nil, errors.Errorf("Unknown server type: %s", network)
+				return nil, errors.Errorf("Unknown network type: %s", address.Scheme)
 			}
 
 			data, err := json.Marshal(s)
@@ -83,7 +89,7 @@ func unmarshalServer(s interface{}) (Server, error) {
 
 			err = json.Unmarshal(data, server)
 			if err != nil {
-				return nil, errors.Errorf("Failed unmarshalling data: %v", data)
+				return nil, errors.Wrapf(err, "Failed unmarshalling data: %v", string(data))
 			}
 
 			return server, nil

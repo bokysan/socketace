@@ -1,6 +1,8 @@
 package addr
 
 import (
+	"encoding/json"
+	"github.com/pkg/errors"
 	"net/url"
 	"strings"
 )
@@ -21,10 +23,18 @@ func (pa *ProtoAddress) UnmarshalFlag(s string) error {
 	s = strings.TrimSpace(s)
 	p, err := url.Parse(s)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "Cannot parse %q", s)
 	}
 	pa.URL = *p
 	return nil
+}
+
+func (pa *ProtoAddress) UnmarshalJSON(b []byte) error {
+	var stuff string
+	if err := json.Unmarshal(b, &stuff); err != nil {
+		return errors.WithStack(err)
+	}
+	return pa.UnmarshalFlag(stuff)
 }
 
 // ParseAddress does the reserse of ProtoAddress.String -- it will take a string and convert it

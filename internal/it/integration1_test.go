@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"io"
 	"net"
-	"net/url"
 	"os"
 	"strconv"
 	"testing"
@@ -25,14 +24,6 @@ const echoServicePort int = 41000
 var echoServiceAddress = "127.0.0.1:" + strconv.Itoa(echoServicePort)
 
 type closer func()
-
-func mustParseUrl(endpoint string) *url.URL {
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		panic(err)
-	}
-	return u
-}
 
 func echoService(r io.ReadCloser, w io.WriteCloser) error {
 	defer streams.TryClose(r)
@@ -172,12 +163,11 @@ func Test_SimpleConnection(t *testing.T) {
 		Channels: server.Channels{
 			&server.NetworkChannel{
 				AbstractChannel: server.AbstractChannel{
-					Kind: "network",
 					ProtoName: addr.ProtoName{
 						Name: "echo",
 					},
+					Address: addr.MustParseAddress("tcp://" + echoServiceAddress),
 				},
-				ProtoAddress: addr.MustParseAddress("tcp://" + echoServiceAddress),
 			},
 		},
 		Servers: server.Servers{
@@ -242,12 +232,11 @@ func Test_SimpleSslConnection(t *testing.T) {
 		Channels: server.Channels{
 			&server.NetworkChannel{
 				AbstractChannel: server.AbstractChannel{
-					Kind: "network",
 					ProtoName: addr.ProtoName{
 						Name: "echo",
 					},
+					Address: addr.MustParseAddress("tcp://" + echoServiceAddress),
 				},
-				ProtoAddress: addr.MustParseAddress("tcp://" + echoServiceAddress),
 			},
 		},
 		Servers: server.Servers{
@@ -324,12 +313,11 @@ func Test_SimpleStartTlsConnection(t *testing.T) {
 		Channels: server.Channels{
 			&server.NetworkChannel{
 				AbstractChannel: server.AbstractChannel{
-					Kind: "network",
 					ProtoName: addr.ProtoName{
 						Name: "echo",
 					},
+					Address: addr.MustParseAddress("tcp://" + echoServiceAddress),
 				},
-				ProtoAddress: addr.MustParseAddress("tcp://" + echoServiceAddress),
 			},
 		},
 		Servers: server.Servers{
