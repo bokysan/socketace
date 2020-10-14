@@ -16,7 +16,7 @@ import (
 // Upstream adds the Connect method to connect to the upstream
 type Upstream interface {
 	streams.Connection
-	Connect(manager cert.TlsConfig) error
+	Connect(manager cert.TlsConfig, mustSecure bool) error
 }
 
 // ------ // ------ // ------ // ------ // ------ // ------ // ------ //
@@ -24,6 +24,7 @@ type Upstream interface {
 // Upstreams is a list of upstream servers
 type Upstreams struct {
 	Data       []Upstream
+	MustSecure bool // If MustSecure is true, non-secured sessions are not tolerated
 	mutex      sync.Mutex
 	connection Upstream
 	session    *smux.Session
@@ -40,7 +41,6 @@ func (ul *Upstreams) UnmarshalFlag(endpoint string) error {
 }
 
 func unmarshalUpstream(endpoint string) (Upstream, error) {
-
 	address, err := addr.ParseAddress(endpoint)
 	err = errors.Wrapf(err, "Invalid URL: %s", endpoint)
 	if err != nil {
@@ -49,11 +49,11 @@ func unmarshalUpstream(endpoint string) (Upstream, error) {
 
 	switch address.Scheme {
 	case "http", "https", "ws", "wss":
-		return &Http{Address: address}, nil
+		return &Http{Address: *address}, nil
 	case "tcp", "tcp+tls", "unix", "unixpacket", "unix+tls", "unixpacket+tls":
-		return &Socket{Address: address}, nil
+		return &Socket{Address: *address}, nil
 	case "stdin", "stdin+tls":
-		return &InputOutput{Address: address}, nil
+		return &InputOutput{Address: *address}, nil
 	default:
 		return nil, errors.Errorf("Unknown scheme: %s", address.Scheme)
 	}
@@ -78,7 +78,7 @@ func (ul *Upstreams) creteSession() (err error) {
 
 func (ul *Upstreams) open(manager cert.TlsConfig) (err error) {
 	for _, a := range ul.Data {
-		err = a.Connect(manager)
+		err = a.Connect(manager, ul.MustSecure)
 		if err != nil {
 			log.WithError(err).Debugf("Could not connect to %v, will retry with the next endpoint.", a)
 			continue

@@ -21,7 +21,7 @@ import (
 
 const echoServicePort int = 41000
 
-var echoServiceAddress = "127.0.0.1:" + strconv.Itoa(echoServicePort)
+var echoServiceAddress = addr.MustParseAddress("tcp://" + "127.0.0.1:" + strconv.Itoa(echoServicePort))
 
 type closer func()
 
@@ -84,7 +84,7 @@ func TestMain(m *testing.M) {
 func setup() (closer, error) {
 
 	shutdown := make(chan bool, 1)
-	l, err := net.Listen("tcp", echoServiceAddress)
+	l, err := net.Listen("tcp", echoServiceAddress.Host)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func setup() (closer, error) {
 	}, nil
 }
 
-func helloEchoTest(t *testing.T, conn net.Conn) {
+func helloEchoTest(t *testing.T, conn io.ReadWriteCloser) {
 	var err error
 
 	scanner := bufio.NewScanner(conn)
@@ -152,7 +152,7 @@ func helloEchoTest(t *testing.T, conn net.Conn) {
 
 }
 
-func Test_SimpleConnection(t *testing.T) {
+func Test_SimpleInsecureConnection(t *testing.T) {
 
 	p1Reader, p1Writer := io.Pipe()
 	p2Reader, p2Writer := io.Pipe()
@@ -166,7 +166,7 @@ func Test_SimpleConnection(t *testing.T) {
 					ProtoName: addr.ProtoName{
 						Name: "echo",
 					},
-					Address: addr.MustParseAddress("tcp://" + echoServiceAddress),
+					Address: echoServiceAddress,
 				},
 			},
 		},
@@ -189,12 +189,14 @@ func Test_SimpleConnection(t *testing.T) {
 				},
 			},
 		},
-		ListenList: listener.ListenList{
-			&listener.Listener{
-				ProtoName: addr.ProtoName{
-					Name: "echo",
+		ListenList: listener.Listeners{
+			&listener.SocketListener{
+				AbstractListener: listener.AbstractListener{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: addr.MustParseAddress("tcp://" + localServiceAddress),
 				},
-				Address: addr.MustParseAddress("tcp://" + localServiceAddress),
 			},
 		},
 	}
@@ -221,12 +223,12 @@ func Test_SimpleConnection(t *testing.T) {
 
 }
 
-func Test_SimpleSslConnection(t *testing.T) {
+func Test_SimpleWrappedTlsConnection(t *testing.T) {
 
 	p1Reader, p1Writer := io.Pipe()
 	p2Reader, p2Writer := io.Pipe()
 
-	localServiceAddress := "localhost:" + strconv.Itoa(echoServicePort+1)
+	localServiceAddress := "localhost:" + strconv.Itoa(echoServicePort+2)
 
 	s := serverCmd.Command{
 		Channels: server.Channels{
@@ -235,7 +237,7 @@ func Test_SimpleSslConnection(t *testing.T) {
 					ProtoName: addr.ProtoName{
 						Name: "echo",
 					},
-					Address: addr.MustParseAddress("tcp://" + echoServiceAddress),
+					Address: echoServiceAddress,
 				},
 			},
 		},
@@ -269,12 +271,14 @@ func Test_SimpleSslConnection(t *testing.T) {
 				},
 			},
 		},
-		ListenList: listener.ListenList{
-			&listener.Listener{
-				ProtoName: addr.ProtoName{
-					Name: "echo",
+		ListenList: listener.Listeners{
+			&listener.SocketListener{
+				AbstractListener: listener.AbstractListener{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: addr.MustParseAddress("tcp://" + localServiceAddress),
 				},
-				Address: addr.MustParseAddress("tcp://" + localServiceAddress),
 			},
 		},
 	}
@@ -307,7 +311,7 @@ func Test_SimpleStartTlsConnection(t *testing.T) {
 	p1Reader, p1Writer := io.Pipe()
 	p2Reader, p2Writer := io.Pipe()
 
-	localServiceAddress := "localhost:" + strconv.Itoa(echoServicePort+1)
+	localServiceAddress := "localhost:" + strconv.Itoa(echoServicePort+3)
 
 	s := serverCmd.Command{
 		Channels: server.Channels{
@@ -316,7 +320,7 @@ func Test_SimpleStartTlsConnection(t *testing.T) {
 					ProtoName: addr.ProtoName{
 						Name: "echo",
 					},
-					Address: addr.MustParseAddress("tcp://" + echoServiceAddress),
+					Address: echoServiceAddress,
 				},
 			},
 		},
@@ -350,12 +354,14 @@ func Test_SimpleStartTlsConnection(t *testing.T) {
 				},
 			},
 		},
-		ListenList: listener.ListenList{
-			&listener.Listener{
-				ProtoName: addr.ProtoName{
-					Name: "echo",
+		ListenList: listener.Listeners{
+			&listener.SocketListener{
+				AbstractListener: listener.AbstractListener{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: addr.MustParseAddress("tcp://" + localServiceAddress),
 				},
-				Address: addr.MustParseAddress("tcp://" + localServiceAddress),
 			},
 		},
 	}
@@ -378,6 +384,296 @@ func Test_SimpleStartTlsConnection(t *testing.T) {
 	defer streams.TryClose(conn)
 
 	helloEchoTest(t, conn)
+
+	log.Infof("Test completed.")
+
+}
+
+func Test_TcpSocketConnection(t *testing.T) {
+
+	localServiceAddress := addr.MustParseAddress("tcp://localhost:" + strconv.Itoa(echoServicePort+4))
+	socketListenAddress := addr.MustParseAddress("tcp://localhost:" + strconv.Itoa(echoServicePort+5))
+
+	s := serverCmd.Command{
+		Channels: server.Channels{
+			&server.NetworkChannel{
+				AbstractChannel: server.AbstractChannel{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: echoServiceAddress,
+				},
+			},
+		},
+		Servers: server.Servers{
+			&server.SocketServer{
+				Address: socketListenAddress,
+			},
+		},
+	}
+
+	c := clientCmd.Command{
+		Upstream: upstream.Upstreams{
+			Data: []upstream.Upstream{
+				&upstream.Socket{
+					Address: socketListenAddress,
+				},
+			},
+		},
+		ListenList: listener.Listeners{
+			&listener.SocketListener{
+				AbstractListener: listener.AbstractListener{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: localServiceAddress,
+				},
+			},
+		},
+	}
+
+	interrupted := make(chan os.Signal, 1)
+	require.NoError(t, s.Startup(interrupted))
+	require.NoError(t, c.Startup(interrupted))
+
+	defer func() {
+		interrupted <- os.Interrupt
+		require.NoError(t, c.Shutdown())
+		require.NoError(t, s.Shutdown())
+	}()
+
+	conn, err := net.Dial("tcp", localServiceAddress.Host)
+	require.NoError(t, err)
+
+	conn = streams.NewSafeConnection(conn)
+
+	defer streams.TryClose(conn)
+
+	helloEchoTest(t, conn)
+
+	log.Infof("Test completed.")
+
+}
+
+func Test_TcpWrappedTlsSocketConnection(t *testing.T) {
+
+	localServiceAddress := addr.MustParseAddress("tcp://localhost:" + strconv.Itoa(echoServicePort+6))
+	socketListenAddress := addr.MustParseAddress("tcp+tls://localhost:" + strconv.Itoa(echoServicePort+7))
+
+	s := serverCmd.Command{
+		Channels: server.Channels{
+			&server.NetworkChannel{
+				AbstractChannel: server.AbstractChannel{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: echoServiceAddress,
+				},
+			},
+		},
+		Servers: server.Servers{
+			&server.SocketServer{
+				ServerConfig: cert.ServerConfig{
+					Config: cert.Config{
+						Certificate:        testCertificate,
+						PrivateKey:         testPrivatekey,
+						PrivateKeyPassword: &testPassword,
+					},
+					RequireClientCert: false,
+				},
+				Address: socketListenAddress,
+			},
+		},
+	}
+
+	c := clientCmd.Command{
+		ClientConfig: cert.ClientConfig{
+			InsecureSkipVerify: true,
+		},
+		Upstream: upstream.Upstreams{
+			Data: []upstream.Upstream{
+				&upstream.Socket{
+					Address: socketListenAddress,
+				},
+			},
+		},
+		ListenList: listener.Listeners{
+			&listener.SocketListener{
+				AbstractListener: listener.AbstractListener{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: localServiceAddress,
+				},
+			},
+		},
+	}
+
+	interrupted := make(chan os.Signal, 1)
+	require.NoError(t, s.Startup(interrupted))
+	require.NoError(t, c.Startup(interrupted))
+
+	defer func() {
+		interrupted <- os.Interrupt
+		require.NoError(t, c.Shutdown())
+		require.NoError(t, s.Shutdown())
+	}()
+
+	conn, err := net.Dial("tcp", localServiceAddress.Host)
+	require.NoError(t, err)
+
+	conn = streams.NewSafeConnection(conn)
+	defer streams.TryClose(conn)
+
+	helloEchoTest(t, conn)
+
+	log.Infof("Test completed.")
+
+}
+
+func Test_WebsocketConnection(t *testing.T) {
+
+	localServiceAddress := addr.MustParseAddress("tcp://localhost:" + strconv.Itoa(echoServicePort+8))
+	socketListenAddress := addr.MustParseAddress("http://localhost:" + strconv.Itoa(echoServicePort+9))
+	socketListenAddressAll := addr.MustParseAddress("http://localhost:" + strconv.Itoa(echoServicePort+9) + "/ws/all")
+
+	s := serverCmd.Command{
+		Channels: server.Channels{
+			&server.NetworkChannel{
+				AbstractChannel: server.AbstractChannel{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: echoServiceAddress,
+				},
+			},
+		},
+		Servers: server.Servers{
+			&server.HttpServer{
+				Address: socketListenAddress,
+				Endpoints: server.WebsocketEndpointList{
+					server.HttpEndpoint{
+						Endpoint: "/ws/all",
+					},
+				},
+			},
+		},
+	}
+
+	c := clientCmd.Command{
+		Upstream: upstream.Upstreams{
+			Data: []upstream.Upstream{
+				&upstream.Http{
+					Address: socketListenAddressAll,
+				},
+			},
+		},
+		ListenList: listener.Listeners{
+			&listener.SocketListener{
+				AbstractListener: listener.AbstractListener{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: localServiceAddress,
+				},
+			},
+		},
+	}
+
+	interrupted := make(chan os.Signal, 1)
+	require.NoError(t, s.Startup(interrupted))
+	require.NoError(t, c.Startup(interrupted))
+
+	defer func() {
+		interrupted <- os.Interrupt
+		require.NoError(t, c.Shutdown())
+		require.NoError(t, s.Shutdown())
+	}()
+
+	conn, err := net.Dial("tcp", localServiceAddress.Host)
+	require.NoError(t, err)
+
+	conn = streams.NewSafeConnection(conn)
+
+	defer streams.TryClose(conn)
+
+	helloEchoTest(t, conn)
+
+	log.Infof("Test completed.")
+
+}
+
+func Test_IoListener(t *testing.T) {
+
+	p1Reader, p1Writer := io.Pipe()
+	p2Reader, p2Writer := io.Pipe()
+
+	p3Reader, p3Writer := io.Pipe()
+	p4Reader, p4Writer := io.Pipe()
+
+	p3 := streams.NewReadWriteCloser(p3Reader, p4Writer)
+	p4 := streams.NewReadWriteCloser(p4Reader, p3Writer)
+
+	s := serverCmd.Command{
+		Channels: server.Channels{
+			&server.NetworkChannel{
+				AbstractChannel: server.AbstractChannel{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: echoServiceAddress,
+				},
+			},
+		},
+		Servers: server.Servers{
+			&server.IoServer{
+				Address: addr.MustParseAddress("stdio://"),
+				Input:   p1Reader,
+				Output:  p2Writer,
+			},
+		},
+	}
+
+	c := clientCmd.Command{
+		Upstream: upstream.Upstreams{
+			Data: []upstream.Upstream{
+				&upstream.InputOutput{
+					Address: addr.MustParseAddress("stdio://"),
+					Input:   p2Reader,
+					Output:  p1Writer,
+				},
+			},
+		},
+		ListenList: listener.Listeners{
+			&listener.InputOutputListener{
+				AbstractListener: listener.AbstractListener{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: addr.MustParseAddress("stdio://"),
+				},
+				InputOutput: streams.NewSimulatedConnection(
+					p3,
+					&streams.StandardIOAddress{Address: "local"},
+					&streams.StandardIOAddress{Address: "remote"},
+				),
+			},
+		},
+	}
+
+	interrupted := make(chan os.Signal, 1)
+	require.NoError(t, s.Startup(interrupted))
+	require.NoError(t, c.Startup(interrupted))
+
+	defer func() {
+		interrupted <- os.Interrupt
+		require.NoError(t, c.Shutdown())
+		require.NoError(t, s.Shutdown())
+	}()
+
+	defer streams.TryClose(p4)
+
+	helloEchoTest(t, p4)
 
 	log.Infof("Test completed.")
 

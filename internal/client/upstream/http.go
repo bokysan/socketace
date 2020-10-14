@@ -18,16 +18,16 @@ type Http struct {
 	streams.Connection
 
 	// Address is the parsed representation of the address and calculated automatically while unmarshalling
-	Address *addr.ProtoAddress
+	Address addr.ProtoAddress
 }
 
 func (ups *Http) String() string {
 	return ups.Address.String()
 }
 
-func (ups *Http) Connect(manager cert.TlsConfig) error {
+func (ups *Http) Connect(manager cert.TlsConfig, mustSecure bool) error {
 
-	u := *ups.Address
+	u := ups.Address
 
 	var stream streams.Connection
 	var tlsConfig *tls.Config
@@ -71,15 +71,19 @@ func (ups *Http) Connect(manager cert.TlsConfig) error {
 	} else if err != nil {
 		return errors.Wrapf(err, "Could not connect to %v", ups.Address)
 	}
-
 	log.Debugf("[Client] Http upstream connection established to %+v", ups.Address)
+	cert.PrintPeerCertificates(c.UnderlyingConn())
 
 	stream = streams.NewWebsocketTunnelConnection(c)
-	stream, err = socketace.NewClientConnection(stream, manager, secure, ups.Address.Host)
+	cc, err := socketace.NewClientConnection(stream, manager, secure, ups.Address.Host)
 	if err != nil {
 		return errors.Wrapf(err, "Could not open connection")
+	} else if mustSecure && !cc.Secure() {
+		return errors.Errorf("Could not establish a secure connection to %v", ups.Address)
+	} else {
+		stream = cc
 	}
-	ups.Connection = streams.NewNamedConnection(stream, ups.Address.String())
+	ups.Connection = streams.NewNamedConnection(streams.NewNamedConnection(stream, ups.Address.String()), "http")
 
 	return nil
 }

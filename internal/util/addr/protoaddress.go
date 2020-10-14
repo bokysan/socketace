@@ -50,10 +50,10 @@ func ParseAddress(addr string) (*ProtoAddress, error) {
 }
 
 // MustParseAddress will parse the address and panic if it can't
-func MustParseAddress(addr string) *ProtoAddress {
+func MustParseAddress(addr string) ProtoAddress {
 	pa, err := ParseAddress(addr)
 	if err != nil {
 		panic(err)
 	}
-	return pa
+	return *pa
 }

@@ -11,14 +11,13 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"time"
 )
 
 type SocketServer struct {
 	cert.ServerConfig
 
-	Address  *addr.ProtoAddress `json:"address"`
-	Channels []string           `json:"channels"`
+	Address  addr.ProtoAddress `json:"address"`
+	Channels []string          `json:"channels"`
 
 	secure    bool
 	upstreams Channels
@@ -32,7 +31,7 @@ func NewSocketServer() *SocketServer {
 
 func (st *SocketServer) String() string {
 	var addr addr.ProtoAddress
-	addr = *st.Address
+	addr = st.Address
 	if st.secure {
 		addr.Scheme = addr.Scheme + "+tls"
 	}
@@ -56,38 +55,32 @@ func (st *SocketServer) Startup(channels Channels) error {
 		st.secure = false
 	}
 
-	startupErrors := make(chan error, 1)
-	go func() {
-		var err error
-		if st.secure {
-			var tlsConfig *tls.Config
-			if tlsConfig, err = st.ServerConfig.GetTlsConfig(); err != nil {
-				startupErrors <- errors.Wrapf(err, "Could not configure TLS")
-				return
-			}
-
-			log.Infof("Starting TLS socket server at %s", st)
-			if st.listener, err = tls.Listen(st.Address.Scheme, st.Address.Host, tlsConfig); err != nil && err != http.ErrServerClosed {
-				startupErrors <- errors.WithStack(err)
-				return
-			}
-		} else {
-			log.Infof("Starting plain socket server at %s", st)
-			if st.listener, err = net.Listen(st.Address.Scheme, st.Address.Host); err != nil && err != http.ErrServerClosed {
-				startupErrors <- errors.WithStack(err)
-				return
-			}
+	var err error
+	if st.secure {
+		var tlsConfig *tls.Config
+		if tlsConfig, err = st.ServerConfig.GetTlsConfig(); err != nil {
+			return errors.Wrapf(err, "Could not configure TLS")
 		}
+		log.Infof("Starting TLS socket server at %s", st)
+		if st.listener, err = tls.Listen(st.Address.Scheme, st.Address.Host, tlsConfig); err != nil && err != http.ErrServerClosed {
+			return errors.WithStack(err)
+		}
+	} else {
+		log.Infof("Starting plain socket server at %s", st)
+		if st.listener, err = net.Listen(st.Address.Scheme, st.Address.Host); err != nil && err != http.ErrServerClosed {
+			return errors.WithStack(err)
+		}
+	}
 
+	if err != nil {
+		return err
+	}
+
+	go func() {
 		st.acceptConnection()
 	}()
 
-	select {
-	case <-time.After(3 * time.Second):
-		return nil
-	case err := <-startupErrors:
-		return err
-	}
+	return nil
 }
 
 func (st *SocketServer) acceptConnection() {
@@ -96,6 +89,12 @@ func (st *SocketServer) acceptConnection() {
 		if conn != nil {
 			conn = streams.NewNamedConnection(conn, "socket")
 			log.Debugf("New connection detected: %+v", conn)
+		}
+		if st.done {
+			if conn != nil {
+				streams.TryClose(conn)
+			}
+			break
 		}
 		if err != nil {
 			if !strings.Contains(err.Error(), "use of closed network connection") {
@@ -109,7 +108,6 @@ func (st *SocketServer) acceptConnection() {
 		if err = AcceptConnection(conn, &st.ServerConfig, st.secure, st.upstreams); err != nil {
 			log.WithError(err).Errorf("Error accepting connection: %v", err)
 		}
-		streams.TryClose(conn)
 	}
 }
 

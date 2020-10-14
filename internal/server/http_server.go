@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"net"
 	"net/http"
 	"time"
 )
@@ -20,7 +21,7 @@ import (
 type HttpServer struct {
 	cert.ServerConfig
 
-	Address   *addr.ProtoAddress    `json:"address"`
+	Address   addr.ProtoAddress     `json:"address"`
 	Endpoints WebsocketEndpointList `json:"endpoints"`
 
 	secure        bool
@@ -36,7 +37,7 @@ func NewHttpServer() *HttpServer {
 
 func (ws *HttpServer) String() string {
 	var addr addr.ProtoAddress
-	addr = *ws.Address
+	addr = ws.Address
 	return fmt.Sprintf("%s", addr.String())
 }
 
@@ -121,38 +122,38 @@ func (ws *HttpServer) Startup(channels Channels) error {
 		ws.secure = false
 	}
 
-	startupErrors := make(chan error, 1)
+	var tlsConfig *tls.Config
+	var ln net.Listener
+	ln, err = net.Listen("tcp", ws.server.Addr)
+	if err != nil {
+		return errors.Wrapf(err, "Could not listen on %v", ws.server.Addr)
+	}
+
+	if ws.secure {
+		if tlsConfig, err = ws.ServerConfig.GetTlsConfig(); err != nil {
+			return errors.Wrapf(err, "Could not configure TLS")
+		}
+		ws.server.TLSConfig = tlsConfig
+	}
+
 	go func() {
 		if ws.secure {
-			var tlsConfig *tls.Config
-			if tlsConfig, err = ws.ServerConfig.GetTlsConfig(); err != nil {
-				startupErrors <- errors.Wrapf(err, "Could not configure TLS")
-				return
-			}
-
-			ws.server.TLSConfig = tlsConfig
 			log.Infof("Starting HTTPS server at %v", ws)
-			if err := ws.server.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
-				startupErrors <- errors.WithStack(err)
-				return
+			if err := ws.server.ServeTLS(ln, "", ""); err != http.ErrServerClosed {
+				err = errors.WithStack(err)
+				log.WithError(err).Errorf("Could not start the server %v", err)
 			}
 
 		} else {
 			log.Infof("Starting HTTP server at %v", ws)
-			if err := ws.server.ListenAndServe(); err != http.ErrServerClosed {
-				startupErrors <- errors.WithStack(err)
-				return
+			if err := ws.server.Serve(ln); err != http.ErrServerClosed {
+				err = errors.WithStack(err)
+				log.WithError(err).Errorf("Could not start the server %v", err)
 			}
 		}
 	}()
 
-	select {
-	case <-time.After(3 * time.Second):
-		return nil
-	case err := <-startupErrors:
-		return err
-	}
-
+	return nil
 }
 
 func (ws *HttpServer) Shutdown() error {

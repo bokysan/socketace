@@ -17,7 +17,7 @@ type InputOutput struct {
 	streams.Connection
 
 	// Address is the parsed representation of the address and calculated automatically while unmarshalling
-	Address *addr.ProtoAddress
+	Address addr.ProtoAddress
 
 	Input  io.ReadCloser
 	Output io.WriteCloser
@@ -27,9 +27,7 @@ func (ups *InputOutput) String() string {
 	return ups.Address.String()
 }
 
-func (ups *InputOutput) Connect(manager cert.TlsConfig) error {
-	u := *ups.Address
-
+func (ups *InputOutput) Connect(manager cert.TlsConfig, mustSecure bool) error {
 	var stream streams.Connection
 	var secure bool
 	var err error
@@ -50,7 +48,7 @@ func (ups *InputOutput) Connect(manager cert.TlsConfig) error {
 		&streams.StandardIOAddress{Address: "client-output"},
 	)
 
-	if streams.HasTls.MatchString(u.Scheme) {
+	if streams.HasTls.MatchString(ups.Address.Scheme) {
 		secure = true
 		var tlsConfig *tls.Config
 		if tlsConfig, err = manager.GetTlsConfig(); err != nil {
@@ -58,24 +56,37 @@ func (ups *InputOutput) Connect(manager cert.TlsConfig) error {
 		}
 		tlsConfig.InsecureSkipVerify = true
 
-		log.Tracef("[Client] Executing TLS handshake %s", u.String())
+		log.Tracef("[Client] Executing TLS handshake %s", ups.Address.String())
 		tlsConn := tls.Client(stream, tlsConfig)
 		if err = tlsConn.Handshake(); err != nil {
 			return errors.WithStack(err)
 		}
 		log.Debugf("[Client] Connection encrypted using TLS")
+		cert.PrintPeerCertificates(tlsConn)
+
 		stream = streams.NewNamedConnection(tlsConn, "tls")
 	} else {
-		log.Debugf("Dialing plain %s", u.String())
+		log.Debugf("Dialing plain %s", ups.Address.String())
 
 	}
 
 	log.Debugf("[Client] Input/output upstream connection established to %+v", ups.Address)
 
-	stream, err = socketace.NewClientConnection(stream, manager, secure, "")
+	log.Debugf("[Client] mustSecure=%v", mustSecure)
+	cc, err := socketace.NewClientConnection(stream, manager, secure, "")
+	log.Debugf("[Client] cc=%v", cc)
+	if cc != nil {
+		log.Debugf("[Client] mustSecure=%v cc.Secure()=%v", mustSecure, cc.Secure())
+	}
+
 	if err != nil {
 		return errors.Wrapf(err, "Could not open connection")
+	} else if mustSecure && !cc.Secure() {
+		return errors.Errorf("Could not establish a secure connection to %v", ups.Address)
+	} else {
+		stream = cc
 	}
+
 	ups.Connection = streams.NewNamedConnection(stream, "stdin")
 
 	return nil

@@ -147,11 +147,12 @@ func (cc *ClientConnection) upgrade(conn *streams.BufferedInputConnection, shoul
 	if shouldStartTls {
 		client, err := cc.startTls(conn)
 		if err != nil {
-			streams.LogClose(conn)
+			streams.TryClose(conn)
 			err = errors.Errorf("Could not establish a secure connection: %v", err)
 			return nil, err
 		}
 		log.Infof("[Client] (Secure) Connected StartTLS-secured to server %v at %v", response.Headers.Get("Server"), client.RemoteAddr().String())
+
 		cc.secure = true
 		cc.securityTech = SecurityTls
 		return streams.NewNamedConnection(client, "tls"), err
@@ -186,6 +187,7 @@ func (cc *ClientConnection) startTls(conn streams.Connection) (streams.Connectio
 		return nil, errors.Wrapf(err, "StartTLS handshake failed: %v", err)
 	}
 	log.Debugf("[Client] Connection encrypted using TLS")
+	cert.PrintPeerCertificates(tlsConn)
 	return streams.NewNamedConnection(tlsConn, "tls"), nil
 }
 

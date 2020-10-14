@@ -92,7 +92,7 @@ func (ch *ConnectionHandler) acceptStream() {
 func (ch *ConnectionHandler) muxHandler(protocol string, downstreamConnection io.ReadWriteCloser) error {
 	for _, channel := range ch.channels {
 		if protocol == "/"+channel.Name() {
-			log.Debugf("[Upstream] Opening connection to upstream: %v", channel)
+			log.Debugf("[Upstream] Opening connection to upstream: %v", channel.String())
 			upstreamConnection, err := channel.OpenConnection()
 			if err != nil {
 				return err

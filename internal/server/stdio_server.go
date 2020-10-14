@@ -15,8 +15,8 @@ import (
 type IoServer struct {
 	cert.ServerConfig
 
-	Address  *addr.ProtoAddress `json:"address"`
-	Channels []string           `json:"channels"`
+	Address  addr.ProtoAddress `json:"address"`
+	Channels []string          `json:"channels"`
 
 	Input  io.ReadCloser
 	Output io.WriteCloser

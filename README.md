@@ -1,7 +1,7 @@
 # SocketAce
 
-**Your ultimate connection tunnel.** TCP websocket tunnel. TLS sockets tunnel. One executable for the client and the
-server. Multiple platforms supported. Written in [go](https://golang.org).
+**Your ultimate connection tunnel.** TCP websocket tunnel. TLS sockets tunnel. Serial connection socket tunnel. One 
+executable for the client and the server. Multiple platforms supported. Written in [go](https://golang.org).
 
 Ever had an issue with restrictive firewalls? Well, this tool will help out. Socketace allows you to tunnel *multiple* 
 connections through:
@@ -30,21 +30,21 @@ SocketAce will use *one pyhiscal connection* and overlay multiple *logical conne
                     - Unix socket                                                 - Unix socket
                     - standard input/output
 +--------------+
-| CHANNEL      |                   <- PICK PROPER CHANNEL / SERVICE ->
+| CHANNEL      |                       <- PICK PROPER CHANNEL / SERVICE ->
 +--------------+
 +--------------+
-| MULTIPLEX    |            <- MULTIPLEX MULTIPLE CONNECTIONS OVER ONE CONNECTION  ->
+| MULTIPLEX    |              <- MULTIPLEX MULTIPLE CONNECTIONS OVER ONE CONNECTION  ->
 +--------------+
 +--------------+
-| SECURITY     |                  <- SECURE CONNECTION VIA STARTTLS  ->
+| SECURITY     |                      <- SECURE CONNECTION VIA STARTTLS  ->
 +--------------+
 +--------------+
-| CONNECTIVITY |                                  Tunnel via via:
-+--------------+                                  - simple sockets (TCP or Unix)
-                                                  - TLS-encrypted sockets (TCP or Unix)
-                                                  - websockets on plain HTTP
-                                                  - websockets on TLS-encrpyted HTTPS
-                                                  - standard input/output
+| CONNECTIVITY |                               Tunnel via via:
++--------------+                               - simple sockets (TCP or Unix)
+                                               - TLS-encrypted sockets (TCP or Unix)
+                                               - websockets on plain HTTP
+                                               - websockets on TLS-encrpyted HTTPS
+                                               - standard input/output
 ```
 
 This allows you to do wild combinations, such as:
@@ -54,8 +54,6 @@ This allows you to do wild combinations, such as:
   (i.e. replicate what `stunnel` does) 
 - listen on a local standard in/out, forward to remote service via websocket
   (i.e. "expose ssh via websockets")
-- 
-
 
 ## Contents
 
@@ -70,6 +68,8 @@ This allows you to do wild combinations, such as:
     1. [Synopsis](#synopsis)
     1. [Description](#description)
     1. [Examples](#examples)
+1. [Caveats](#caveats)
+    1. [Connecting to a secure (TLS-enabled) service](#connecting-to-a-secure-tls-enabled-service)
 1. [TO-DO](#to-do)
 1. [Similar projects](#similar-projects)
 
@@ -165,6 +165,7 @@ socketace client
     [--private-key <string> | --private-key-file=<file>]
     [--private-key-password <string> | --private-key-password-program=<string>]
     [-k|--insecure]
+    [-s|--secure]
     [-l|--listen <string>]...
     [-u|--upstream <string>...
 ```
@@ -190,7 +191,6 @@ that will be accessible through this server setup.
 server:
   channels:
     - name: <service-name>
-      network: <network>
       address: <address>
     ...
 ```
@@ -199,10 +199,8 @@ You may define multiple channels (upstreams). Each cannel needs the following pr
 
 - `name` is the unique name given to this upstream server. This is then referenced later
   on in the `servers` section and on the client. A good example would be `ssh`, `web`, `oracle` etc.
-- `network` is the protocol used to connect to the backend. Possible options are: `tcp` for Internet,
-  and `unix` and `unixgram` for unix sockets.
-- `address` is the address of the upstream. For `tcp` this is the host and the port, e.g. `127.0.0.1:22`,
-  `www.google.com:80` or ˙[::1]:8080`. For unix sockets, this is the path to the socket.
+- `address` is the address of the upstream. For `tcp` this is the host and the port, e.g. `tcp://127.0.0.1:22`,
+  `tcp://www.google.com:80` or `tcp://[::1]:8080`, `unix:///var/sock/app.sock`, `unixpacket:///var/sock/app.sock`.
  
 ##### Servers
  
@@ -212,9 +210,7 @@ To configure the server, add it to the `servers` section of the configuration.
 ```yaml
 server:
   servers:
-    - kind: <kind>
-      [listen: <address>]
-      [
+    - address: <address>
       endpoints:
         - endpoint: <url-part>
         ...
@@ -232,19 +228,26 @@ server:
 
 Where:
 
-- `kind` is the type of server to run. Can be `websocket`, `tcp`, `stdin` and `unix`.
-  - All services other than `stdin` require the listening configuration
-  - `stdin` listens on stdin/stdout. As expected, only one `stdin` server can be configured. This allows you to
-    use SocketAce via `ssh` (like [rsync](https://en.wikipedia.org/wiki/Rsync) over `ssh`) or any other service
-    that can stream standard input and output
+- `address` is the type of server and listening location. Can be `http`, `https`, `tcp`, `tcp+tls`, `stdin`
+    `stdin+tls`, `unix` or `unix+tls`.
+  - Always use a valid url, e.g. `tcp://0.0.0.0:5000`, `https://0.0.0.0:8900`.
+  - Address type will define the listening server style, e.g. `http` and `https` will start an HTTP / websocket
+    server, `tcp` and `unix` will start a standard socket server.
+  - `stdin` and `stdin+tls` listen to stdin/stdout. As expected, only one `stdin` server can be configured. This allows
+    you to use SocketAce via `ssh` (like [rsync over `ssh`](https://en.wikipedia.org/wiki/Rsync)) or any other service
+    which can stream via standard input and output (e.g. via `telnet` or `netcat` or even serial connection).
+  - TLS-secured tunnels will need the certificate info.
+  - You can also listen on a non-secured channel (e.g. HTTP) and provide certificate info. If provided, server will
+    support the `StartTLS` command, which executes TLS handshake after connecting. Especially useful if you're proxying
+    the connection over an existing HTTP server.
 - `endpoints` is only required or `websocket` server. It defines the list of URLs the server should listen to.
   For example `/ws/all` or `/my/secret/connection`. You may listen on multiple URLs.
 - `channels` defines a list of upstream channels that this connection proxies. If not defined, all channels are 
   proxied.
-- `caCertificate` or `caCertificateFile` may be defined if you want to use mutual (client and server) certificate
+- Define `caCertificate` or `caCertificateFile` if you want to use mutual (client and server) certificate
   authentication. When defined, the server will accept client connections only if signed by the given CA certificate. 
-- `certificate` or `certificateFile` is server's certificate. When defined, the server automatically switches to
-  TLS connection. Applicable for all server kinds. 
+- `certificate` or `certificateFile` is the server's certificate. Needed for `tls` connections. If provided for non-TLS
+  connections, server will suggest to the client to switch to secure communication via `StartTLS`.  
 - `privateKey`, `privateKeyFile`, `privateKeyPassword` and `privateKeyPasswordProgram` should be pretty 
   self-explanatory. They must be defined when `certificate` is set up. 
 
@@ -264,7 +267,6 @@ two options are important:
   - `listen-url` is the protocol and the host/path to listen on. Protocol may be `tcp`, `unix` and `stdin` 
   - `foward-url` is the optional direct address of the service. If specified, the client will try to connect
     to this service directly first and, failing that, start going through upstream services.
-
  
 ### Examples
 
@@ -277,20 +279,63 @@ provides different server setups.
 
 ##### Use socketace as a simple telnet client  
 
-```sh
-socketace -k --upstream tcp+tls://server.example.com:80 --upstream https://server.example.com/proxy --listen smtp~stdin
+```shell script
+socketace client -k --upstream tcp+tls://server.example.com:80 --upstream https://server.example.com/proxy --listen smtp~stdin
 ```
 
 ##### Use socketace to SSH to your server from anywhere
 
-```sh
-ssh localhost -o ProxyCommand='socketace --upstream http://127.0.0.1:9999/ws/all --listen ssh~stdin'
+```shell script
+ssh localhost -o ProxyCommand='socketace client --upstream http://127.0.0.1:9999/ws/all --listen ssh~stdin'
 ```
 
 ##### Use socketace to proxy IMAP and SMTP
 
-```sh
-socketace -e tcp+tls://server.example.com:80 --listen imap~127.0.0.1:143 --listen imap~127.0.0.2:587
+```shell script
+socketace client -e tcp+tls://server.example.com:80 --listen imap~tcp://127.0.0.1:143 --listen imap~tcp://127.0.0.2:587
+```
+
+## Caveats
+
+### Connecting to a secure (TLS-enabled) service
+
+If you are trying to proxy a connection to a secure service, you will most likely run into certificate errors. E.g.
+
+If you configure your server with the following:
+
+```yaml
+server:
+  channels:
+    - name: google
+      address: tcp://www.google.com:443
+  servers:
+    # Simple socket proxy. No security.
+    - address: tcp://127.0.0.1:9995
+```
+
+...and start the server like this:
+
+```shell script
+socketace server -c config.yml
+```
+
+...and start the client like this:
+
+```shell script
+socketace client --upstream tcp://localhost:9995 --listen google~tcp://127.0.0.1:9898
+```
+
+Then this will produce a certificate error:
+
+```shell script
+curl https://localhost:9898
+```
+
+You need to supply the correct host name (either by overriding your hostfile or supplying the host name, if possible).
+With `curl`, this is trivial:
+
+```shell script
+curl -H "Host: www.google.com" https://localhost:9898
 ```
 
 ## TO-DO
@@ -305,5 +350,5 @@ requests are welcome:
   
 ## Similar projects
 
-There's [Chisel](https://github.com/jpillora/chisel) which tries to achieve about the same goal
-but goes about it in a bit of a diffrent way.
+There's [Chisel](https://github.com/jpillora/chisel) which tries to achieve about the same goal, but goes about it 
+in a bit of a different way.

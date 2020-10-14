@@ -17,8 +17,9 @@ import (
 type Command struct {
 	cert.ClientConfig
 
-	ListenList listener.ListenList `json:"listen"   short:"l" long:"listen"    env:"LISTEN" env-delim:" "     description:"List of addresses to listen on (for specific name). Use multiple times to listen to different services."`
-	Upstream   upstream.Upstreams  `json:"upstream" short:"u" long:"upstream"  env:"UPSTREAM" required:"true" description:"Upstream server address(es). Will be tried in other specified on the command line e.g. 'tcp://example.org:1234', 'https://172.10.1.11/ws/all', 'tcp+tls://10.1.2.3:2222', 'stdin:'"`
+	ListenList listener.Listeners `json:"listen"   short:"l" long:"listen"    env:"LISTEN"   env-delim:" "   description:"List of addresses to listen on (for specific name). Use multiple times to listen to different services."`
+	Upstream   upstream.Upstreams `json:"upstream" short:"u" long:"upstream"  env:"UPSTREAM" required:"true" description:"Upstream server address(es). Will be tried in other specified on the command line e.g. 'tcp://example.org:1234', 'https://172.10.1.11/ws/all', 'tcp+tls://10.1.2.3:2222', 'stdin:'"`
+	Secure     bool               `json:"secure"   short:"s" long:"secure"    env:"SECURE"                   description:"Force secure connections to upstream (fail if a secure channel cannot be established)"`
 }
 
 func NewCommand() *Command {
@@ -34,7 +35,8 @@ func (s *Command) Startup(interrupted <-chan os.Signal) error {
 	case <-interrupted:
 		return nil
 	default:
-		if err := s.ListenList.StartListening(&s.Upstream, s); err != nil {
+		s.Upstream.MustSecure = s.Secure
+		if err := s.ListenList.Start(&s.Upstream, s); err != nil {
 			return errors.Wrapf(err, "Could not listen on some of the addresses: %s", err)
 		}
 		return nil

@@ -23,7 +23,7 @@ type Channel interface {
 
 type AbstractChannel struct {
 	addr.ProtoName `yaml:",inline"`
-	Address        *addr.ProtoAddress `json:"address"`
+	Address        addr.ProtoAddress `json:"address"`
 }
 
 func (u *AbstractChannel) Name() string {
@@ -166,7 +166,7 @@ func (chl *Channels) UnmarshalFlag(endpoint string) error {
 			ProtoName: addr.ProtoName{
 				Name: parts[0],
 			},
-			Address: address,
+			Address: *address,
 		},
 	}
 

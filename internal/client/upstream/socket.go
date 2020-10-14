@@ -16,16 +16,16 @@ type Socket struct {
 	streams.Connection
 
 	// Address is the parsed representation of the address and calculated automatically while unmarshalling
-	Address *addr.ProtoAddress
+	Address addr.ProtoAddress
 }
 
 func (ups *Socket) String() string {
 	return ups.Address.String()
 }
 
-func (ups *Socket) Connect(manager cert.TlsConfig) error {
+func (ups *Socket) Connect(manager cert.TlsConfig, mustSecure bool) error {
 
-	u := *ups.Address
+	u := ups.Address
 
 	var stream streams.Connection
 	var secure bool
@@ -52,12 +52,18 @@ func (ups *Socket) Connect(manager cert.TlsConfig) error {
 	}
 
 	log.Debugf("[Client] Socket upstream connection established to %+v", ups.Address)
+	cert.PrintPeerCertificates(c)
 
-	stream, err = socketace.NewClientConnection(c, manager, secure, ups.Address.Host)
+	cc, err := socketace.NewClientConnection(c, manager, secure, ups.Address.Host)
 	if err != nil {
 		return errors.Wrapf(err, "Could not open connection")
+	} else if mustSecure && !cc.Secure() {
+		return errors.Errorf("Could not establish a secure connection to %v", ups.Address)
+	} else {
+		stream = cc
 	}
-	ups.Connection = streams.NewNamedConnection(stream, ups.Address.String())
+
+	ups.Connection = streams.NewNamedConnection(streams.NewNamedConnection(stream, ups.Address.String()), "socket")
 
 	return nil
 }
