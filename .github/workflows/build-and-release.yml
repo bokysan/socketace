@@ -56,8 +56,8 @@ jobs:
         id: setup_environment
         shell: bash
         run: |
-          echo "::set-env name=GOVERSION::$(go version)"
-          echo "::set-env name=GIT_BRANCH::$(git symbolic-ref --short HEAD 2>/dev/null || echo '')"
+          echo "$(go version)" >> $GOVERSION
+          echo "$(git symbolic-ref --short HEAD 2>/dev/null || echo '')" >> $GIT_BRANCH
 
       - name: Setup Go
         id: setup_go
