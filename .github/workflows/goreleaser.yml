@@ -2,47 +2,6 @@ name: Build and release
 on: push
 
 jobs:
-  buildx:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        id: checkout
-        uses: actions/checkout@v2
-
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: crazy-max/ghaction-docker-buildx@v1
-        with:
-          buildx-version: latest
-
-      - name: Build edge version
-        id: build_edge_version
-        if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
-        env:
-          DOCKER_USERNAME: 'boky'
-          DOCKER_PASSWORD: '${{ secrets.DOCKER_ACCESS_TOKEN }}'
-          DOCKER_BUILDKIT: 1
-          DOCKER_CLI_EXPERIMENTAL: enabled
-          PLATFORMS: "linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le"
-        run: ./build-docker.sh -t boky/socketace:edge --push --build-arg "GORELEASER_EXTRA_ARGS=--snapshot"
-
-      - name: Extract tag names
-        id: extract_tag_names
-        if: startsWith(github.ref, 'refs/tags/') && github.event_name != 'pull_request'
-        shell: bash
-        run: ./get-docker-tags.sh
-
-      - name: Build tagged version
-        id: build_tagged_version
-        if: env.DO_BUILD_TAG == '1'
-        env:
-          DOCKER_USERNAME: 'boky'
-          DOCKER_PASSWORD: '${{ secrets.DOCKER_ACCESS_TOKEN }}'
-          DOCKER_BUILDKIT: 1
-          DOCKER_CLI_EXPERIMENTAL: enabled
-          PLATFORMS: "linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le,linux/mips,linux/mipsle,linux/mips64,linux/mips64le,linux/s390x"
-        run: ./build-docker.sh $TAGS --push
-
   artifacts:
     runs-on: ubuntu-latest
     steps:

@@ -1,4 +1,4 @@
-# SocketAce
+# SocketAce [![Docker image](https://github.com/bokysan/socketace/workflows/Docker/badge.svg)](https://github.com/bokysan/socketace/actions?query=workflow%3A%22Docker%22)] [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fbokysan%2Fsocketace.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fbokysan%2Fsocketace?ref=badge_shield)
 
 **Your ultimate connection tunnel.** TCP websocket tunnel. TLS sockets tunnel. Serial connection socket tunnel. One 
 executable for the client and the server. Multiple platforms supported. Written in [go](https://golang.org).
