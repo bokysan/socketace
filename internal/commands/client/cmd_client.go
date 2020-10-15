@@ -50,7 +50,7 @@ func (s *Command) Shutdown() error {
 	s.Upstream.Shutdown()
 	for _, srv := range s.ListenList {
 		srvType := reflect.TypeOf(reflect.Indirect(reflect.ValueOf(srv)).Interface())
-		log.Debugf("Shutting down %v: %v", srvType, srv.String())
+		log.Debugf("[Client] Shutting down %v: %v", srvType, srv.String())
 		if err := srv.Shutdown(); err != nil {
 			errs = multierror.Append(errs, errors.Wrapf(err, "Could not shutdown %v: %v", srvType, srv))
 		}

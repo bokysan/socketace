@@ -54,13 +54,13 @@ func (st *IoServer) Startup(channels Channels) error {
 	inputOuput := streams.NewReadWriteCloser(st.Input, st.Output)
 
 	stream = streams.NewSimulatedConnection(inputOuput,
-		&streams.StandardIOAddress{Address: "server-input"},
-		&streams.StandardIOAddress{Address: "server-output"},
+		&addr.StandardIOAddress{Address: "server-input"},
+		&addr.StandardIOAddress{Address: "server-output"},
 	)
 
 	var tlsConfig *tls.Config
-	if streams.HasTls.MatchString(st.Address.Scheme) {
-		log.Infof("Starting TLS stdio server at %s", st)
+	if addr.HasTls.MatchString(st.Address.Scheme) {
+		log.Infof("Starting TLS stdio server at %s", st.String())
 
 		secure = true
 		if tlsConfig, err = st.ServerConfig.GetTlsConfig(); err != nil {
@@ -68,7 +68,7 @@ func (st *IoServer) Startup(channels Channels) error {
 		}
 	} else {
 		st.Address.Scheme = "stdio"
-		log.Infof("Starting plain stdio server at %s", st)
+		log.Infof("Starting plain stdio server at %s", st.String())
 
 	}
 

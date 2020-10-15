@@ -7,21 +7,18 @@ server:
     #- name: socks
     #  kind: socks
   servers:
-      # Simple HTTP (websocket) proxy. No security. Expose specific channels only
-    - address: http://127.0.0.1:9999
+    - address: http://127.0.0.1:9999 # Simple HTTP (websocket) proxy. No security. Expose specific channels only
       endpoints:
         - channels: [ 'ssh', 'www' ]
           endpoint: /ws/all
 
-      # Simple HTTP (websocket) proxy. No security. Expose ssh channel on /ws/ssh and everything on /ws/everything.
-    - address: http://127.0.0.1:9998
+    - address: http://127.0.0.1:9998 # Simple HTTP (websocket) proxy. No security. Expose ssh channel on /ws/ssh and everything on /ws/everything.
       endpoints:
         - channels: [ 'ssh' ]
           endpoint: /ws/ssh
         - endpoint: /ws/everything
 
-      # Simple HTTPS (websocket) proxy. Secured by TLS.
-    - address: https://127.0.0.1:9997
+    - address: https://127.0.0.1:9997 # Simple HTTPS (websocket) proxy. Secured by TLS.
       #
       # *** BIG FAT WARNING ***
       #
@@ -36,8 +33,7 @@ server:
       endpoints:
         - endpoint: /ws/all
 
-      # Simple HTTP (websocket) proxy. Secured by StartTLS.
-    - address: http://127.0.0.1:9996
+    - address: http://127.0.0.1:9996 # Simple HTTP (websocket) proxy. Secured by StartTLS.
       #
       # *** BIG FAT WARNING ***
       #
@@ -52,11 +48,9 @@ server:
       endpoints:
         - endpoint: /ws/all
 
-      # Simple socket proxy. No security. Expose all channels.
-    - address: tcp://127.0.0.1:9995
+    - address: tcp://127.0.0.1:9995 # Simple socket proxy. No security. Expose all channels.
 
-      # Simple socket proxy. Secure by directly encrypting the socket.
-    - address: tcp+tls://127.0.0.1:9994
+    - address: tcp+tls://127.0.0.1:9994 # Simple socket proxy. Secure by directly encrypting the socket.
       #
       # *** BIG FAT WARNING ***
       #
@@ -69,8 +63,7 @@ server:
       privateKeyFile: privatekey.pem
       privateKeyPassword: test1234
 
-      # Simple socket proxy. Secured by StartTLS.
-    - address: tcp://127.0.0.1:9993
+    - address: tcp://127.0.0.1:9993 # Simple socket proxy. Secured by StartTLS.
       #
       # *** BIG FAT WARNING ***
       #
@@ -83,8 +76,20 @@ server:
       privateKeyFile: privatekey.pem
       privateKeyPassword: test1234
 
-      # Simple socket proxy. Secured by StartTLS.
-    - address: "stdin:"
+    - address: udp://127.0.0.1:9992 # Simple UDP proxy. Secured by StartTLS.
+      #
+      # *** BIG FAT WARNING ***
+      #
+      # DO NOT USE THE CERTIFICATES AND KEYS IN THIS EXAMPLE. THEY HAVE BEEN PUSHED TO A PUBLIC REPOSITORY AND AS
+      # SUCH CAN BE SAFELY ASSUMED COMPROMISED.
+      # THIS IS AN EXAMPLE ONLY. USING THESE KEYS IS THE SAME AS HAVING NO ENCRYPTION AT ALL.
+      # YOU SHOULD REALLY LOOK UP OPENSSL DOCUMENTATION AND GENERATE THE KEYS AND THE CERTIFICATES YOURSELF.
+      #
+      certificateFile: cert.pem
+      privateKeyFile: privatekey.pem
+      privateKeyPassword: test1234
+
+    - address: "stdin://" # Simple socket proxy listening on stdin/stdout. Secured by StartTLS.
       #
       # *** BIG FAT WARNING ***
       #

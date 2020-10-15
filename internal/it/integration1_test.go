@@ -152,6 +152,72 @@ func helloEchoTest(t *testing.T, conn io.ReadWriteCloser) {
 
 }
 
+func Test_UdpConnection(t *testing.T) {
+
+	localServiceAddress := addr.MustParseAddress("tcp://localhost:" + strconv.Itoa(echoServicePort+10))
+	socketListenAddress := addr.MustParseAddress("udp://localhost:" + strconv.Itoa(echoServicePort+11))
+
+	s := serverCmd.Command{
+		Channels: server.Channels{
+			&server.NetworkChannel{
+				AbstractChannel: server.AbstractChannel{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: echoServiceAddress,
+				},
+			},
+		},
+		Servers: server.Servers{
+			&server.PacketServer{
+				Address: socketListenAddress,
+			},
+		},
+	}
+
+	c := clientCmd.Command{
+		Upstream: upstream.Upstreams{
+			Data: []upstream.Upstream{
+				&upstream.Packet{
+					Address: socketListenAddress,
+				},
+			},
+		},
+		ListenList: listener.Listeners{
+			&listener.SocketListener{
+				AbstractListener: listener.AbstractListener{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: localServiceAddress,
+				},
+			},
+		},
+	}
+
+	interrupted := make(chan os.Signal, 1)
+	require.NoError(t, s.Startup(interrupted))
+	require.NoError(t, c.Startup(interrupted))
+
+	defer func() {
+		interrupted <- os.Interrupt
+		require.NoError(t, c.Shutdown())
+		require.NoError(t, s.Shutdown())
+	}()
+
+	conn, err := net.Dial("tcp", localServiceAddress.Host)
+	require.NoError(t, err)
+
+	conn = streams.NewSafeConnection(conn)
+
+	defer streams.TryClose(conn)
+
+	helloEchoTest(t, conn)
+
+	log.Infof("Test completed.")
+
+}
+
 func Test_SimpleInsecureConnection(t *testing.T) {
 
 	p1Reader, p1Writer := io.Pipe()
@@ -654,8 +720,8 @@ func Test_IoListener(t *testing.T) {
 				},
 				InputOutput: streams.NewSimulatedConnection(
 					p3,
-					&streams.StandardIOAddress{Address: "local"},
-					&streams.StandardIOAddress{Address: "remote"},
+					&addr.StandardIOAddress{Address: "local"},
+					&addr.StandardIOAddress{Address: "remote"},
 				),
 			},
 		},

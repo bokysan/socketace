@@ -27,25 +27,25 @@ func (ups *Http) String() string {
 
 func (ups *Http) Connect(manager cert.TlsConfig, mustSecure bool) error {
 
-	u := ups.Address
+	a := ups.Address
 
 	var stream streams.Connection
 	var tlsConfig *tls.Config
 	var secure bool
 
-	if streams.HasTls.MatchString(u.Scheme) {
+	if addr.HasTls.MatchString(a.Scheme) {
 		secure = true
-		u.Scheme = streams.PlusEnd.ReplaceAllString(u.Scheme, "")
-		u.Scheme = u.Scheme + "s"
-		if u.Scheme == "http" {
-			u.Scheme = "wss"
+		a.Scheme = addr.PlusEnd.ReplaceAllString(a.Scheme, "")
+		a.Scheme = a.Scheme + "s"
+		if a.Scheme == "http" {
+			a.Scheme = "wss"
 		}
-	} else if u.Scheme == "http" {
-		u.Scheme = "ws"
-	} else if u.Scheme == "https" {
-		u.Scheme = "wss"
+	} else if a.Scheme == "http" {
+		a.Scheme = "ws"
+	} else if a.Scheme == "https" {
+		a.Scheme = "wss"
 		secure = true
-	} else if u.Scheme == "wss" {
+	} else if a.Scheme == "wss" {
 		secure = true
 	}
 
@@ -63,8 +63,8 @@ func (ups *Http) Connect(manager cert.TlsConfig, mustSecure bool) error {
 		TLSClientConfig:  tlsConfig,
 	}
 
-	log.Debugf("Dialing %s", u.String())
-	c, _, err := dialer.Dial(u.String(), nil)
+	log.Debugf("Dialing %s", a.String())
+	c, _, err := dialer.Dial(a.String(), nil)
 	if err == websocket.ErrBadHandshake {
 		// Gracefully handle errors, fallback to GET/POST handling if websocket connection cannot be established
 		return errors.Wrapf(err, "Could not connect to %v", ups.Address)

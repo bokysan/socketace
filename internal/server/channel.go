@@ -74,7 +74,7 @@ type NetworkChannel struct {
 }
 
 func (u *NetworkChannel) String() string {
-	return fmt.Sprintf("%v->%v", u.Name(), u.Address)
+	return fmt.Sprintf("%v->%v", u.Name(), u.Address.String())
 }
 
 // OpenConnection will open a connection the the upstream server

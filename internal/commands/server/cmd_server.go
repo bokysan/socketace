@@ -60,7 +60,7 @@ func (s *Command) Shutdown() error {
 	log.Infof("Graceful server shutdown...")
 	for _, srv := range s.Servers {
 		srvType := reflect.TypeOf(reflect.Indirect(reflect.ValueOf(srv)).Interface())
-		log.Debugf("Shutting down %s: %s", srvType, srv)
+		log.Debugf("[Server] Shutting down %v: %v", srvType, srv.String())
 		if err := srv.Shutdown(); err != nil {
 			errs = multierror.Append(errs, errors.Wrapf(err, "Could not shutdown %v: %v", srvType, srv))
 		}

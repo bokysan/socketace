@@ -30,20 +30,18 @@ func NewSocketServer() *SocketServer {
 }
 
 func (st *SocketServer) String() string {
-	var addr addr.ProtoAddress
-	addr = st.Address
+	var a addr.ProtoAddress
+	a = st.Address
 	if st.secure {
-		addr.Scheme = addr.Scheme + "+tls"
+		a.Scheme = a.Scheme + "+tls"
 	}
 
-	return fmt.Sprintf("%s", addr.String())
+	return fmt.Sprintf("%s", a.String())
 }
 
-//goland:noinspection GoUnusedParameter
 func (st *SocketServer) Startup(channels Channels) error {
-	var errs error
 	if upstreams, err := channels.Filter(st.Channels); err != nil {
-		return errors.WithStack(errs)
+		return errors.WithStack(err)
 	} else {
 		st.upstreams = upstreams
 	}
@@ -56,18 +54,24 @@ func (st *SocketServer) Startup(channels Channels) error {
 	}
 
 	var err error
+
+	n, err := st.Address.Addr()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
 	if st.secure {
 		var tlsConfig *tls.Config
 		if tlsConfig, err = st.ServerConfig.GetTlsConfig(); err != nil {
 			return errors.Wrapf(err, "Could not configure TLS")
 		}
-		log.Infof("Starting TLS socket server at %s", st)
-		if st.listener, err = tls.Listen(st.Address.Scheme, st.Address.Host, tlsConfig); err != nil && err != http.ErrServerClosed {
+		log.Infof("Starting TLS socket server at %s", st.String())
+		if st.listener, err = tls.Listen(n.Network(), n.String(), tlsConfig); err != nil && err != http.ErrServerClosed {
 			return errors.WithStack(err)
 		}
 	} else {
-		log.Infof("Starting plain socket server at %s", st)
-		if st.listener, err = net.Listen(st.Address.Scheme, st.Address.Host); err != nil && err != http.ErrServerClosed {
+		log.Infof("Starting plain socket server at %s", st.String())
+		if st.listener, err = net.Listen(n.Network(), n.String()); err != nil && err != http.ErrServerClosed {
 			return errors.WithStack(err)
 		}
 	}
@@ -91,7 +95,7 @@ func (st *SocketServer) acceptConnection() {
 			log.Debugf("New connection detected: %+v", conn)
 		}
 		if st.done {
-			if conn != nil {
+			if conn != nil && err == nil {
 				streams.TryClose(conn)
 			}
 			break

@@ -54,6 +54,8 @@ func unmarshalUpstream(endpoint string) (Upstream, error) {
 		return &Socket{Address: *address}, nil
 	case "stdin", "stdin+tls":
 		return &InputOutput{Address: *address}, nil
+	case "upd", "upd4", "upd6", "unixgram":
+		return &Packet{Address: *address}, nil
 	default:
 		return nil, errors.Errorf("Unknown scheme: %s", address.Scheme)
 	}

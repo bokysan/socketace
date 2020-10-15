@@ -111,7 +111,7 @@ func (ws *HttpServer) Startup(channels Channels) error {
 		Handler: router,
 	}
 
-	if streams.HasTls.MatchString(ws.Address.Scheme) {
+	if addr.HasTls.MatchString(ws.Address.Scheme) {
 		ws.Address.Scheme = ws.Address.Scheme[:len(ws.Address.Scheme)-4]
 		ws.secure = true
 	} else if ws.Address.Scheme == "https" || ws.Address.Scheme == "wss" {

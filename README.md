@@ -42,9 +42,11 @@ SocketAce will use *one pyhiscal connection* and overlay multiple *logical conne
 | CONNECTIVITY |                               Tunnel via via:
 +--------------+                               - simple sockets (TCP or Unix)
                                                - TLS-encrypted sockets (TCP or Unix)
+                                               - packet sockets (UDP or UnixPacket)
                                                - websockets on plain HTTP
                                                - websockets on TLS-encrpyted HTTPS
                                                - standard input/output
+
 ```
 
 This allows you to do wild combinations, such as:
@@ -126,7 +128,6 @@ To install manually:
 2. Download the version appropriate for your system into `$HOME/bin` or similar.
 
 
-  
 ## Usage
 
 ### Name
@@ -182,10 +183,10 @@ the server, you need to set up:
 - [Upstreams](#channels-upstreams)
 - [Severs](#servers)
 
-##### Channels (upstreams)
+##### Channels
 
-Upstreams are configured in the YAML `upstreams` section. They define the external services
-that will be accessible through this server setup.
+Channels are configured in the YAML `channels` section. They define the external services that will be accessible 
+through this server setup.
 
 ```yaml
 server:
@@ -204,8 +205,8 @@ You may define multiple channels (upstreams). Each cannel needs the following pr
  
 ##### Servers
  
-At this stage, the following `kinds` (protocols) are supported: `websocket`, `tcp`, `stdin` and `unix`. 
-To configure the server, add it to the `servers` section of the configuration.
+At this stage, the following `kinds` (protocols) are supported: `websocket`, `tcp`, `stdin` and `unix`, `unixpacket`
+and `udp`.  To configure the server, add it to the `servers` section of the configuration.
 
 ```yaml
 server:
@@ -229,10 +230,13 @@ server:
 Where:
 
 - `address` is the type of server and listening location. Can be `http`, `https`, `tcp`, `tcp+tls`, `stdin`
-    `stdin+tls`, `unix` or `unix+tls`.
+    `stdin+tls`, `unix` or `unix+tls`, `udp` and `unixpacket`.
   - Always use a valid url, e.g. `tcp://0.0.0.0:5000`, `https://0.0.0.0:8900`.
-  - Address type will define the listening server style, e.g. `http` and `https` will start an HTTP / websocket
-    server, `tcp` and `unix` will start a standard socket server.
+  - Address type will define the listening server style, e.g.
+    - `http` and `https` will start an HTTP / websocket server, 
+    - `tcp` and `unix` will start a standard socket server,
+    - `udp` and `unixgram` will start a packet socket server,
+    - `stdin` will start a stream on standard input/output.
   - `stdin` and `stdin+tls` listen to stdin/stdout. As expected, only one `stdin` server can be configured. This allows
     you to use SocketAce via `ssh` (like [rsync over `ssh`](https://en.wikipedia.org/wiki/Rsync)) or any other service
     which can stream via standard input and output (e.g. via `telnet` or `netcat` or even serial connection).
@@ -258,8 +262,9 @@ two options are important:
 
 - `--upstream <url>` may be specified multiple times. Defines a list of upstream servers that the client will 
   try to connect to. The format is `<protocol>[://<host|path>]`. Protocol may be any of the following: `tcp`, 
-  `tcp+tls`, `stdin`, `stdin+tls`, `unix`, `unix+tls`, `http`, `https`. Examples:
+  `tcp+tls`, `stdin`, `stdin+tls`, `unix`, `unix+tls`, `http`, `https`, `unixgram` or `udp`. Examples:
   - `tcp://127.0.0.1:9995` to connect to a socket server on `localhost` on `9995` 
+  - `udp://127.0.0.1:9993` to connect to a UDP server on `localhost` on `9993` 
   - `tcp+tls://127.0.0.1:9995` to connect to a TLS-encrypted socket server on `localhost` on `9995` 
   - `stdin` to connect to server through standard input / output
 - `--listen <channel>~<listen-url>[~<forward-url>]` will open a listening socket on the client. 

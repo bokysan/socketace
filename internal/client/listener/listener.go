@@ -221,8 +221,8 @@ func (l *InputOutputListener) Start(upstreams *upstream.Upstreams, config cert.C
 
 		inputOuput := streams.NewReadWriteCloser(os.Stdin, os.Stdout)
 		stream = streams.NewSimulatedConnection(inputOuput,
-			&streams.StandardIOAddress{Address: "client-input"},
-			&streams.StandardIOAddress{Address: "client-output"},
+			&addr.StandardIOAddress{Address: "client-input"},
+			&addr.StandardIOAddress{Address: "client-output"},
 		)
 		stream = streams.NewNamedConnection(stream, "stdio")
 		l.InputOutput = stream

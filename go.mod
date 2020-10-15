@@ -16,9 +16,11 @@ require (
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.6.0
-	github.com/stretchr/testify v1.4.0
+	github.com/stretchr/testify v1.6.1
+	github.com/xtaci/kcp-go/v5 v5.6.1
 	github.com/xtaci/smux v1.5.14
 	github.com/youmark/pkcs8 v0.0.0-20200520070018-fad002e585ce
+	golang.org/x/crypto v0.0.0-20200728195943-123391ffb6de
 	golang.org/x/net v0.0.0-20200822124328-c89045814202 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 )

@@ -44,11 +44,11 @@ func (ups *InputOutput) Connect(manager cert.TlsConfig, mustSecure bool) error {
 
 	inputOuput := streams.NewReadWriteCloser(input, output)
 	stream = streams.NewSimulatedConnection(inputOuput,
-		&streams.StandardIOAddress{Address: "client-input"},
-		&streams.StandardIOAddress{Address: "client-output"},
+		&addr.StandardIOAddress{Address: "client-input"},
+		&addr.StandardIOAddress{Address: "client-output"},
 	)
 
-	if streams.HasTls.MatchString(ups.Address.Scheme) {
+	if addr.HasTls.MatchString(ups.Address.Scheme) {
 		secure = true
 		var tlsConfig *tls.Config
 		if tlsConfig, err = manager.GetTlsConfig(); err != nil {

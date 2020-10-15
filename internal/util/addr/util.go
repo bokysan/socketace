@@ -1,4 +1,4 @@
-package streams
+package addr
 
 import "regexp"
 

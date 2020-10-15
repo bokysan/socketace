@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/bokysan/socketace/v2/internal/util/addr"
 	"github.com/pkg/errors"
 )
@@ -9,6 +10,8 @@ import (
 type Servers []Server
 
 type Server interface {
+	fmt.Stringer
+
 	Startup(channels Channels) error
 	Shutdown() error
 }
@@ -78,6 +81,8 @@ func unmarshalServer(s interface{}) (Server, error) {
 				server = NewIoServer()
 			case "tcp", "unix", "unixpacket", "tcp+tls", "unix+tls", "unixpacket+tls":
 				server = NewSocketServer()
+			case "upd", "udp4", "upd6", "unixgram":
+				server = NewPacketServer()
 			default:
 				return nil, errors.Errorf("Unknown network type: %s", address.Scheme)
 			}
