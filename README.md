@@ -1,4 +1,6 @@
 # SocketAce
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fbokysan%2Fsocketace.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fbokysan%2Fsocketace?ref=badge_shield)
+
 
 **Your ultimate connection tunnel.** TCP websocket tunnel. TLS sockets tunnel. Serial connection socket tunnel. One 
 executable for the client and the server. Multiple platforms supported. Written in [go](https://golang.org).
@@ -352,3 +354,6 @@ requests are welcome:
 
 There's [Chisel](https://github.com/jpillora/chisel) which tries to achieve about the same goal, but goes about it 
 in a bit of a different way.
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fbokysan%2Fsocketace.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fbokysan%2Fsocketace?ref=badge_large)
