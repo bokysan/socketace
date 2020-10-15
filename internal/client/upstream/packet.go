@@ -16,6 +16,7 @@ import (
 // Socket connects to the server via a socket connection
 type Packet struct {
 	streams.Connection
+	PacketConnection net.PacketConn
 
 	// Address is the parsed representation of the address and calculated automatically while unmarshalling
 	Address addr.ProtoAddress
@@ -48,6 +49,11 @@ func (ups *Packet) Connect(manager cert.TlsConfig, mustSecure bool) error {
 	}
 	ups.Address.User = nil
 
+	n, err := ups.Address.Addr()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
 	if secure {
 		log.Debugf("Starting AES-encrypted packet client to %s", ups.String())
 
@@ -61,17 +67,15 @@ func (ups *Packet) Connect(manager cert.TlsConfig, mustSecure bool) error {
 		log.Debugf("Starting plain packet client to %s", ups.String())
 	}
 
-	conn, err := net.ListenUDP(ups.Address.Scheme, nil)
-	if err != nil {
-		return errors.WithStack(err)
+	if ups.PacketConnection == nil {
+		if conn, err := net.ListenPacket(n.Network(), ""); err != nil {
+			return errors.WithStack(err)
+		} else {
+			ups.PacketConnection = conn
+		}
 	}
 
-	n, err := ups.Address.Addr()
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	c, err := kcp.NewConn2(n, block, 10, 3, conn)
+	c, err := kcp.NewConn2(n, block, 10, 3, ups.PacketConnection)
 	if err != nil {
 		return errors.Wrapf(err, "Could not connect to %v", ups.Address)
 	}

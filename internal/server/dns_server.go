@@ -2,33 +2,49 @@ package server
 
 import (
 	"fmt"
-	"github.com/bokysan/socketace/v2/internal/util/addr"
-	"github.com/bokysan/socketace/v2/internal/util/cert"
-	"net/http"
+	"github.com/bokysan/socketace/v2/internal/streams"
+	"github.com/pkg/errors"
+	"net"
 )
 
 type DnsServer struct {
-	cert.ServerConfig
-
-	Address *addr.ProtoAddress `json:"address"`
-	Listen  string             `json:"listen"`
-
-	secure        bool
-	server        *http.Server
-	couldNotStart chan struct{}
+	PacketServer
 }
 
-func (ds *DnsServer) String() string {
-	var addr addr.ProtoAddress
-	addr = *ds.Address
-	if ds.secure {
-		addr.Scheme = addr.Scheme + "+tls"
-	}
-
-	return fmt.Sprintf("%s", addr.String())
-}
 func NewDnsServer() *DnsServer {
-	return &DnsServer{
-		couldNotStart: make(chan struct{}),
+	return &DnsServer{}
+}
+
+func (st *DnsServer) String() string {
+	return fmt.Sprintf("%s", st.Address.String())
+}
+
+func (st *DnsServer) Startup(channels Channels) error {
+	a := st.Address
+	switch a.Scheme {
+	case "dns":
+		a.Scheme = "udp"
+	case "dns+unix", "dns+unixgram":
+		a.Scheme = "unixgram"
+	default:
+		return errors.Errorf("This impementation does not know how to handle %s", st.Address.String())
 	}
+
+	n, err := a.Addr()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	if conn, err := net.ListenPacket(n.Network(), n.String()); err != nil {
+		return errors.WithStack(err)
+	} else {
+		st.PacketConnection = streams.NewDnsServerPacketConnection(conn, st.Address.String())
+	}
+
+	return st.PacketServer.Startup(channels)
+}
+
+func (st *DnsServer) Shutdown() error {
+	st.done = true
+	return streams.LogClose(st.listener)
 }

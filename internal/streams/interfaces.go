@@ -32,6 +32,11 @@ type Connection interface {
 	Closed
 }
 
+type PacketConnection interface {
+	net.PacketConn
+	Closed
+}
+
 type UnwrappedReadCloser interface {
 	Unwrap() io.ReadCloser
 }
@@ -46,4 +51,8 @@ type UnwrappedReadWriteCloser interface {
 
 type UnwrappedConnection interface {
 	Unwrap() net.Conn
+}
+
+type UnwrappedPacketConnection interface {
+	Unwrap() net.PacketConn
 }

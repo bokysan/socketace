@@ -81,8 +81,10 @@ func unmarshalServer(s interface{}) (Server, error) {
 				server = NewIoServer()
 			case "tcp", "unix", "unixpacket", "tcp+tls", "unix+tls", "unixpacket+tls":
 				server = NewSocketServer()
-			case "upd", "udp4", "upd6", "unixgram":
+			case "udp", "udp4", "udp6", "unixgram":
 				server = NewPacketServer()
+			case "dns":
+				server = NewDnsServer()
 			default:
 				return nil, errors.Errorf("Unknown network type: %s", address.Scheme)
 			}

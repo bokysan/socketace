@@ -20,6 +20,8 @@ type PacketServer struct {
 	Address  addr.ProtoAddress `json:"address"`
 	Channels []string          `json:"channels"`
 
+	PacketConnection net.PacketConn
+
 	upstreams Channels
 	listener  net.Listener
 	done      bool
@@ -45,7 +47,6 @@ func (st *PacketServer) Startup(channels Channels) error {
 	var block kcp.BlockCrypt
 	var pass []byte
 	var salt []byte
-	var packetListener net.PacketConn
 
 	if st.Address.User != nil {
 		if p, set := st.Address.User.Password(); set && p != "" {
@@ -60,15 +61,17 @@ func (st *PacketServer) Startup(channels Channels) error {
 	}
 	st.Address.User = nil
 
-	n, err := a.Addr()
-	if err != nil {
-		return errors.WithStack(err)
-	}
+	if st.PacketConnection != nil {
+		n, err := a.Addr()
+		if err != nil {
+			return errors.WithStack(err)
+		}
 
-	if conn, err := net.ListenPacket(n.Network(), n.String()); err != nil {
-		return errors.WithStack(err)
-	} else {
-		packetListener = conn
+		if conn, err := net.ListenPacket(n.Network(), n.String()); err != nil {
+			return errors.WithStack(err)
+		} else {
+			st.PacketConnection = conn
+		}
 	}
 
 	if secure {
@@ -83,7 +86,7 @@ func (st *PacketServer) Startup(channels Channels) error {
 		log.Infof("Starting plain packet server at %s", st.String())
 	}
 
-	listener, err := kcp.ServeConn(block, 10, 3, packetListener)
+	listener, err := kcp.ServeConn(block, 10, 3, st.PacketConnection)
 	if err != nil {
 		return errors.WithStack(err)
 	} else {
