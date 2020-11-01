@@ -133,22 +133,6 @@ func (b *Base128Encoder) Decode(data string) ([]byte, error) {
 	return res, nil
 }
 
-func (b *Base128Encoder) PlacesDots() bool {
-	return false
-}
-
-func (b *Base128Encoder) EatsDots() bool {
-	return false
-}
-
-func (b *Base128Encoder) BlocksizeRaw() int {
-	return 7
-}
-
-func (b *Base128Encoder) BlocksizeEncoded() int {
-	return 8
-}
-
 func (b *Base128Encoder) TestPatterns() []string {
 	return []string{
 		"aA-Aaahhh-Drink-mal-ein-J\344germeister-",

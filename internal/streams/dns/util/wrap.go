@@ -1,7 +1,6 @@
-package dns
+package util
 
 import (
-	"crypto/rand"
 	"encoding/binary"
 	"github.com/bokysan/socketace/v2/internal/util/enc"
 	"github.com/miekg/dns"
@@ -10,69 +9,6 @@ import (
 	"sort"
 	"strings"
 )
-
-// Request represents a (serialized) request to a DNS server
-type Request interface {
-	// Command is the command that this request reffers to
-	Command() Command
-	// Encode will encode this requires into a DNS-compatible query, potentially using the encoder specified. Note that
-	// encoding allways happens in the "hostname/domain" format -- e.g. so you can execute a A, CNAME, or a MX query
-	// whith this.
-	Encode(e enc.Encoder, domain string) (string, error)
-	// Decode will decode the data from the query into this object
-	Decode(e enc.Encoder, request, domain string) error
-}
-
-// Response it the response from the DNS server
-type Response interface {
-	// Command is the command that this request reffers to
-	Command() Command
-	// EncodeResponse will encode this response into a data stream which can bi the sent as a DNS response.
-	Encode(e enc.Encoder, queryType dnsmessage.Type) (*dns.Msg, error)
-	// DecodeResponse will take a byte (data) stream and create a response object
-	Decode(e enc.Encoder, msg *dns.Msg) error
-}
-
-// randomChars returns three random characters which will make sure that the request is not cached
-func randomChars() (string, error) {
-	/* Add lower 15 bits of rand seed as base32, followed by a dot and the tunnel domain and send */
-	seed := make([]byte, 3)
-	if err := binary.Read(rand.Reader, binary.LittleEndian, &seed); err != nil {
-		return "", err
-	}
-
-	seed[0] = enc.ByteToBase32Char(seed[0])
-	seed[1] = enc.ByteToBase32Char(seed[1])
-	seed[2] = enc.ByteToBase32Char(seed[2])
-
-	return string(seed), nil
-}
-
-// prepareHostname will finalize hostname -- add dots in the name, if needed. It will verify that the total
-// lenght of the hostname does not exiceed HostnameMaxLen and throw an error it it does.
-func prepareHostname(data, domain string) (string, error) {
-	if len(data) > LabelMaxlen {
-		data = Dotify(data)
-	}
-	hostname := data + "." + domain
-	if len(hostname) > HostnameMaxLen-2 {
-		return "", ErrTooLong
-	}
-
-	return hostname, nil
-}
-
-// stripDomain will remove the domain from the end of data string and return the string without this domain.
-// If the string does not end with the domain, it does nothing.
-func stripDomain(data, domain string) string {
-	if strings.HasSuffix(strings.ToLower(data), "."+strings.ToLower(domain)) {
-		l2 := len(data)
-		l1 := len(domain) + 1
-		return data[0 : l2-l1]
-	} else {
-		return data
-	}
-}
 
 // TypePriority calculates the supplied type's priority used for sorting
 func TypePriority(rr dns.RR) uint32 {
@@ -111,30 +47,33 @@ func TypePriority(rr dns.RR) uint32 {
 	return 90000
 }
 
-func EncodeDnsResponse(data []byte, queryType dnsmessage.Type) (*dns.Msg, error) {
+// WrapDnsResponse will wrap the given data into the specificed message type. It will call one of the other
+// methods to actually do the wrapping
+func WrapDnsResponse(data []byte, queryType dnsmessage.Type) (*dns.Msg, error) {
 	switch queryType {
 	case QueryTypeNull:
-		return EncodeDnsResponseNull(data)
+		return WrapDnsResponseNull(data)
 	case QueryTypePrivate:
-		return EncodeDnsResponsePrivate(data)
+		return WrapDnsResponsePrivate(data)
 	case QueryTypeTxt:
-		return EncodeDnsResponseTxt(data)
+		return WrapDnsResponseTxt(data)
 	case QueryTypeMx:
-		return EncodeDnsResponseMx(data)
+		return WrapDnsResponseMx(data)
 	case QueryTypeSrv:
-		return EncodeDnsResponseSrv(data)
+		return WrapDnsResponseSrv(data)
 	case QueryTypeCname:
-		return EncodeDnsResponseCname(data)
+		return WrapDnsResponseCname(data)
 	case QueryTypeAAAA:
-		return EncodeDnsResponseAAAA(data)
+		return WrapDnsResponseAAAA(data)
 	case QueryTypeA:
-		return EncodeDnsResponseA(data)
+		return WrapDnsResponseA(data)
 	}
 
 	return nil, errors.Errorf("Unknown query type: %v", queryType)
 }
 
-func EncodeDnsResponseA(data []byte) (*dns.Msg, error) {
+// WrapDnsResponseA will wrap the data into a A-type DNS response message
+func WrapDnsResponseA(data []byte) (*dns.Msg, error) {
 	msg := &dns.Msg{}
 	msg.Authoritative = true
 
@@ -170,7 +109,8 @@ func EncodeDnsResponseA(data []byte) (*dns.Msg, error) {
 	return msg, nil
 }
 
-func EncodeDnsResponseAAAA(data []byte) (*dns.Msg, error) {
+// WrapDnsResponseAAAA will wrap the data into a AAAA-type DNS response message
+func WrapDnsResponseAAAA(data []byte) (*dns.Msg, error) {
 	msg := &dns.Msg{}
 	msg.Authoritative = true
 
@@ -203,7 +143,8 @@ func EncodeDnsResponseAAAA(data []byte) (*dns.Msg, error) {
 	return msg, nil
 }
 
-func EncodeDnsResponseCname(data []byte) (*dns.Msg, error) {
+// WrapDnsResponseCname will wrap the data into a CNAME-type DNS response message
+func WrapDnsResponseCname(data []byte) (*dns.Msg, error) {
 	msg := &dns.Msg{}
 	msg.Authoritative = true
 
@@ -236,7 +177,9 @@ func EncodeDnsResponseCname(data []byte) (*dns.Msg, error) {
 
 	return msg, nil
 }
-func EncodeDnsResponseSrv(data []byte) (*dns.Msg, error) {
+
+// WrapDnsResponseSrv will wrap the data into a SRV-type DNS response message
+func WrapDnsResponseSrv(data []byte) (*dns.Msg, error) {
 	msg := &dns.Msg{}
 	msg.Authoritative = true
 
@@ -267,7 +210,8 @@ func EncodeDnsResponseSrv(data []byte) (*dns.Msg, error) {
 	return msg, nil
 }
 
-func EncodeDnsResponseMx(data []byte) (*dns.Msg, error) {
+// WrapDnsResponseMx will wrap the data into a MX-type DNS response message
+func WrapDnsResponseMx(data []byte) (*dns.Msg, error) {
 	msg := &dns.Msg{}
 	msg.Authoritative = true
 
@@ -298,7 +242,8 @@ func EncodeDnsResponseMx(data []byte) (*dns.Msg, error) {
 	return msg, nil
 }
 
-func EncodeDnsResponseTxt(data []byte) (*dns.Msg, error) {
+// WrapDnsResponseTxt will wrap the data into a TXT-type DNS response message
+func WrapDnsResponseTxt(data []byte) (*dns.Msg, error) {
 	msg := &dns.Msg{}
 	msg.Authoritative = true
 
@@ -359,7 +304,8 @@ func EncodeDnsResponseTxt(data []byte) (*dns.Msg, error) {
 	return msg, nil
 }
 
-func EncodeDnsResponsePrivate(data []byte) (*dns.Msg, error) {
+// WrapDnsResponsePrivate will wrap the data into a PRIVATE-type DNS response message
+func WrapDnsResponsePrivate(data []byte) (*dns.Msg, error) {
 	msg := &dns.Msg{}
 	msg.Authoritative = true
 
@@ -385,14 +331,15 @@ func EncodeDnsResponsePrivate(data []byte) (*dns.Msg, error) {
 				Rdlength: uint16(len(d)),
 			},
 			Data: &SocketAcePrivate{
-				data: d,
+				Data: d,
 			},
 		})
 	}
 	return msg, nil
 }
 
-func EncodeDnsResponseNull(data []byte) (*dns.Msg, error) {
+// WrapDnsResponseNull will wrap the data into a NULL-type DNS response message
+func WrapDnsResponseNull(data []byte) (*dns.Msg, error) {
 	msg := &dns.Msg{}
 	msg.Authoritative = true
 
@@ -423,8 +370,8 @@ func EncodeDnsResponseNull(data []byte) (*dns.Msg, error) {
 	return msg, nil
 }
 
-// DecodeDnsResponse will decode the DNS message and return the plain text response
-func DecodeDnsResponse(q *dns.Msg) string {
+// UnwrapDnsResponse will decode the DNS message and return the bytes in the response
+func UnwrapDnsResponse(q *dns.Msg) string {
 	resp := make([]string, 0)
 	answers := append([]dns.RR{}, q.Answer...)
 
@@ -461,80 +408,4 @@ func DecodeDnsResponse(q *dns.Msg) string {
 	}
 
 	return strings.Join(resp, "")
-}
-
-type Command byte
-type Commands []Command
-
-type LazyMode byte
-
-const (
-	// Command 0123456789abcdef are reserved for user IDs
-	CmdLogin                     Command = 'l'
-	CmdPing                      Command = 'p'
-	CmdTestFragmentSize          Command = 'r'
-	CmdSetDownstreamFragmentSize Command = 'n'
-	CmdTestDownstreamEncoder     Command = 'y'
-	CmdSetDownstreamEncoder      Command = 'o'
-	CmdTestUpstreamEncoder       Command = 'z'
-	CmdSetUpstreamEncoder        Command = 's'
-	CmdTestMultiQuery            Command = 'm'
-)
-
-const (
-	LazyModeOn  LazyMode = 'l'
-	LazyModeOff LazyMode = 'i'
-)
-
-// RequiresUser returs true if the command requires the user ID
-func (c Command) RequiresUser() bool {
-	return c == CmdPing ||
-		c == CmdSetDownstreamFragmentSize ||
-		c == CmdSetDownstreamEncoder ||
-		c == CmdTestFragmentSize ||
-		c == CmdTestUpstreamEncoder
-
-}
-
-// ExpectsEmptyReply will return true if the command expects empty reply (no data
-func (c Command) ExpectsEmptyReply() bool {
-	return c == CmdVersion || c == CmdTestDownstreamEncoder || c == CmdTestMultiQuery
-}
-
-// String will retun the command code as string, e.g. 'z', 's', 'v'...
-func (c Command) String() string {
-	return string(c)
-}
-
-// ValidateType will check if the supplied string starts with the given command type and return an error if its not.
-func (c Command) ValidateType(data string) error {
-	if !c.IsOfType(data) {
-		return errors.Errorf("Invalid command type. Expected %v, got, %v", c, data[0])
-	}
-	return nil
-}
-
-// IsOfType will check if the supplied string starts with the given command type
-func (c Command) IsOfType(data string) bool {
-	if len(data) < 0 {
-		return false
-	}
-	if data[0] == uint8(c) {
-		return true
-	}
-	if strings.ToLower(data[0:1])[0] == uint8(c) {
-		return true
-	}
-	return false
-}
-
-// DetectCommandType will try to detect the type of command from the given data stream. If it cannot be detected,
-// it returns `nil`.
-func (cl Commands) DetectCommandType(data string) *Command {
-	for _, v := range cl {
-		if v.IsOfType(data) {
-			return &v
-		}
-	}
-	return nil
 }

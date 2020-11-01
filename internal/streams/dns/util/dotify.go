@@ -1,8 +1,7 @@
-package dns
+package util
 
 import (
 	"regexp"
-	"time"
 )
 
 var DotRegex = regexp.MustCompile("\\.")
@@ -21,9 +20,4 @@ func Dotify(buf string) (res string) {
 // Undotify will remove the dots from the given string
 func Undotify(buf string) string {
 	return DotRegex.ReplaceAllString(buf, "")
-}
-
-// secs will return the supplied parameter as duration in secs
-func secs(i int) time.Duration {
-	return time.Second * time.Duration(i)
 }

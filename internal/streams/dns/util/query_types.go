@@ -1,11 +1,11 @@
-package dns
+package util
 
 import "golang.org/x/net/dns/dnsmessage"
 
 type QueryTypes []dnsmessage.Type
 
 // Define different query types which can be used
-const (
+var (
 	QueryTypeNull    = dnsmessage.Type(10)
 	QueryTypePrivate = dnsmessage.Type(65000)
 	QueryTypeTxt     = dnsmessage.TypeTXT

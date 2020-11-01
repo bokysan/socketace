@@ -37,22 +37,6 @@ func (b *Base85Encoder) Decode(data string) ([]byte, error) {
 	return dst[:ndst], nil
 }
 
-func (b *Base85Encoder) PlacesDots() bool {
-	return false
-}
-
-func (b *Base85Encoder) EatsDots() bool {
-	return false
-}
-
-func (b *Base85Encoder) BlocksizeRaw() int {
-	return 4
-}
-
-func (b *Base85Encoder) BlocksizeEncoded() int {
-	return 5
-}
-
 func (b *Base85Encoder) TestPatterns() []string {
 	str := make([]byte, 85)
 	// 33 (!) through 117 (u)

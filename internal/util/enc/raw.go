@@ -22,22 +22,6 @@ func (b *RawEncoder) Decode(data string) ([]byte, error) {
 	return []byte(data), nil
 }
 
-func (b *RawEncoder) PlacesDots() bool {
-	return false
-}
-
-func (b *RawEncoder) EatsDots() bool {
-	return false
-}
-
-func (b *RawEncoder) BlocksizeRaw() int {
-	return 8
-}
-
-func (b *RawEncoder) BlocksizeEncoded() int {
-	return 8
-}
-
 func (b *RawEncoder) TestPatterns() []string {
 	return []string{}
 }

@@ -79,22 +79,6 @@ func (b *Base32Encoder) Decode(data string) ([]byte, error) {
 	return res, nil
 }
 
-func (b *Base32Encoder) PlacesDots() bool {
-	return false
-}
-
-func (b *Base32Encoder) EatsDots() bool {
-	return false
-}
-
-func (b *Base32Encoder) BlocksizeRaw() int {
-	return 5
-}
-
-func (b *Base32Encoder) BlocksizeEncoded() int {
-	return 8
-}
-
 func (b *Base32Encoder) TestPatterns() []string {
 	return []string{
 		"aA" + cb32,

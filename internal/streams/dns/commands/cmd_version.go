@@ -1,16 +1,22 @@
-package dns
+package commands
 
 import (
 	"bytes"
 	"encoding/binary"
 	"github.com/bokysan/socketace/v2/internal/util/enc"
-	"github.com/miekg/dns"
 	"github.com/pkg/errors"
-	"golang.org/x/net/dns/dnsmessage"
 	"io"
 )
 
-const CmdVersion Command = 'v'
+var CmdVersion = Command{
+	Code: 'v',
+	NewRequest: func() Request {
+		return &VersionRequest{}
+	},
+	NewResponse: func() Response {
+		return &VersionResponse{}
+	},
+}
 
 type VersionRequest struct {
 	ClientVersion uint32
@@ -20,30 +26,30 @@ func (vr *VersionRequest) Command() Command {
 	return CmdVersion
 }
 
-func (vr *VersionRequest) Encode(e enc.Encoder, domain string) (string, error) {
+func (vr *VersionRequest) Encode(e enc.Encoder) (string, error) {
 	data := &bytes.Buffer{}
 	if err := binary.Write(data, binary.LittleEndian, vr.ClientVersion); err != nil {
 		return "", err
 	}
-	encoded := Base32Encoding.Encode(data.Bytes())
+	encoded := enc.Base32Encoding.Encode(data.Bytes())
 
-	hostname := string(vr.Command()) // Always start with the command ID
+	hostname := vr.Command().String() // Always start with the command ID
 	if rnd, err := randomChars(); err != nil {
 		return "", err
 	} else {
 		hostname += rnd
 	}
 	hostname += encoded
-	return prepareHostname(hostname, domain)
+	return hostname, nil
 }
 
-func (vr *VersionRequest) Decode(e enc.Encoder, req, domain string) error {
+func (vr *VersionRequest) Decode(e enc.Encoder, req string) error {
 	// Verify the request is of proper command
 	if err := vr.Command().ValidateType(req); err != nil {
 		return err
 	}
-	data := stripDomain(req, domain)[4:]
-	decode, err := Base32Encoding.Decode(data)
+	data := req[4:]
+	decode, err := enc.Base32Encoding.Decode(data)
 	if err != nil {
 		return err
 	}
@@ -61,39 +67,37 @@ func (vr *VersionResponse) Command() Command {
 	return CmdVersion
 }
 
-func (vr *VersionResponse) Encode(e enc.Encoder, queryType dnsmessage.Type) (*dns.Msg, error) {
+func (vr *VersionResponse) Encode(e enc.Encoder) (string, error) {
 	data := &bytes.Buffer{}
 	if err := binary.Write(data, binary.LittleEndian, vr.ServerVersion); err != nil {
-		return nil, err
+		return "", err
 	}
 	if vr.Err != nil {
 		if err := data.WriteByte(255); err != nil {
-			return nil, err
+			return "", err
 		}
 		if _, err := data.WriteString(vr.Err.Error()); err != nil {
-			return nil, err
+			return "", err
 		}
 	} else {
-		if err := data.WriteByte(255); err != nil {
-			return nil, err
+		if err := data.WriteByte(0); err != nil {
+			return "", err
 		}
 		if err := data.WriteByte(vr.UserId); err != nil {
-			return nil, err
+			return "", err
 		}
 	}
 
-	val := append([]byte{byte(vr.Command())}, []byte(Base32Encoding.Encode(data.Bytes()))...)
-	return EncodeDnsResponse(val, queryType)
+	return vr.Command().String() + enc.Base32Encoding.Encode(data.Bytes()), nil
 }
 
-func (vr *VersionResponse) Decode(e enc.Encoder, msg *dns.Msg) error {
-	request := DecodeDnsResponse(msg)
+func (vr *VersionResponse) Decode(e enc.Encoder, request string) error {
 
 	if err := vr.Command().ValidateType(request); err != nil {
 		return err
 	}
 
-	val, err := Base32Encoding.Decode(request[1:])
+	val, err := enc.Base32Encoding.Decode(request[1:])
 	if err != nil {
 		return errors.WithStack(err)
 	}

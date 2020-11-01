@@ -57,22 +57,6 @@ func (b *Base64uEncoder) Decode(data string) ([]byte, error) {
 	return res, nil
 }
 
-func (b *Base64uEncoder) PlacesDots() bool {
-	return false
-}
-
-func (b *Base64uEncoder) EatsDots() bool {
-	return false
-}
-
-func (b *Base64uEncoder) BlocksizeRaw() int {
-	return 3
-}
-
-func (b *Base64uEncoder) BlocksizeEncoded() int {
-	return 4
-}
-
 func (b *Base64uEncoder) TestPatterns() []string {
 	return []string{
 		"aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZ_0129-",

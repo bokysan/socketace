@@ -38,24 +38,6 @@ func (b *Base91Encoder) Decode(data string) ([]byte, error) {
 	return res, nil
 }
 
-func (b *Base91Encoder) PlacesDots() bool {
-	return false
-}
-
-func (b *Base91Encoder) EatsDots() bool {
-	return false
-}
-
-func (b *Base91Encoder) BlocksizeRaw() int {
-	// 13-bits
-	return 13
-}
-
-func (b *Base91Encoder) BlocksizeEncoded() int {
-	// 16-bits (two bytes)
-	return 16
-}
-
 func (b *Base91Encoder) TestPatterns() []string {
 	return []string{
 		cb91,
