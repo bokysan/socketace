@@ -85,7 +85,7 @@ func (cc *ClientConnection) handshake(conn *streams.BufferedInputConnection) (er
 	var request *Request
 	var response *Response
 
-	// Send the intital requests
+	// QueryDns the intital requests
 	request = &Request{
 		Method:  RequestMethod,
 		URL:     "/",

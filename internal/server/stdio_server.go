@@ -34,7 +34,7 @@ func NewIoServer() *IoServer {
 }
 
 func (st *IoServer) String() string {
-	return fmt.Sprintf("%s", st.Address)
+	return fmt.Sprintf("%v", st.Address)
 }
 
 //goland:noinspection GoUnusedParameter

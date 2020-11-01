@@ -41,7 +41,7 @@ func (y *YamlParser) ParseFile(filename string) error {
 		}
 	}()
 
-	// Parse the file. Send into the decoder the location of the file and the support for recursive
+	// Parse the file. QueryDns into the decoder the location of the file and the support for recursive
 	// directories. This allows you to reference files in subdirs
 	return y.parse(body, yaml.ReferenceDirs(path.Dir(filename)), yaml.RecursiveDir(true))
 }

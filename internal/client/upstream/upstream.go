@@ -57,7 +57,7 @@ func unmarshalUpstream(endpoint string) (Upstream, error) {
 	case "udp", "udp4", "udp6", "unixgram":
 		return &Packet{Address: *address}, nil
 	case "dns", "dns+udp", "dns+unixgram":
-		return &Dns{Packet{Address: *address}}, nil
+		return &Dns{Address: *address}, nil
 	default:
 		return nil, errors.Errorf("Unknown scheme: %s", address.Scheme)
 	}

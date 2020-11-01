@@ -13,20 +13,41 @@ import (
 	"net"
 )
 
+type ConnectionFromPacketConn func(remote net.Addr, block kcp.BlockCrypt) (net.Conn, error)
+
 // Socket connects to the server via a socket connection
 type Packet struct {
 	streams.Connection
-	PacketConnection net.PacketConn
 
 	// Address is the parsed representation of the address and calculated automatically while unmarshalling
 	Address addr.ProtoAddress
+}
+
+// DefaultCreateConnection will create a packet connection over UDP using KCP
+func DefaultCreateConnection(remote net.Addr, block kcp.BlockCrypt) (net.Conn, error) {
+	var listener net.PacketConn
+	if conn, err := net.ListenPacket(remote.Network(), ""); err != nil {
+		return nil, errors.WithStack(err)
+	} else {
+		listener = conn
+	}
+
+	return kcp.NewConn2(remote, block, 10, 3, listener)
 }
 
 func (ups *Packet) String() string {
 	return ups.Address.String()
 }
 
+// Connect will create a stream over packet connection and use the DefaultCreateConnection to do so.
 func (ups *Packet) Connect(manager cert.TlsConfig, mustSecure bool) error {
+	return ups.ConnectPacket(manager, mustSecure, DefaultCreateConnection)
+}
+
+// ConnectPacket will create a stream over a packet connection. It will take the supplied
+// connectFunc to actually "cast" the packet connection into a net.Conn. This is to allow pluggable
+// mechanism of underlying packet translation service.
+func (ups *Packet) ConnectPacket(manager cert.TlsConfig, mustSecure bool, connectFunc ConnectionFromPacketConn) error {
 
 	var stream streams.Connection
 	var secure bool
@@ -67,15 +88,7 @@ func (ups *Packet) Connect(manager cert.TlsConfig, mustSecure bool) error {
 		log.Debugf("Starting plain packet client to %s", ups.String())
 	}
 
-	if ups.PacketConnection == nil {
-		if conn, err := net.ListenPacket(n.Network(), ""); err != nil {
-			return errors.WithStack(err)
-		} else {
-			ups.PacketConnection = conn
-		}
-	}
-
-	c, err := kcp.NewConn2(n, block, 10, 3, ups.PacketConnection)
+	c, err := connectFunc(n, block)
 	if err != nil {
 		return errors.Wrapf(err, "Could not connect to %v", ups.Address)
 	}

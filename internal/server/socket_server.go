@@ -19,6 +19,7 @@ type SocketServer struct {
 	Address  addr.ProtoAddress `json:"address"`
 	Channels []string          `json:"channels"`
 
+	name      string
 	secure    bool
 	upstreams Channels
 	listener  net.Listener
@@ -26,7 +27,9 @@ type SocketServer struct {
 }
 
 func NewSocketServer() *SocketServer {
-	return &SocketServer{}
+	return &SocketServer{
+		name: "socket",
+	}
 }
 
 func (st *SocketServer) String() string {
@@ -91,7 +94,7 @@ func (st *SocketServer) acceptConnection() {
 	for !st.done {
 		conn, err := st.listener.Accept()
 		if conn != nil {
-			conn = streams.NewNamedConnection(conn, "socket")
+			conn = streams.NewNamedConnection(conn, st.name)
 			log.Debugf("New connection detected: %+v", conn)
 		}
 		if st.done {

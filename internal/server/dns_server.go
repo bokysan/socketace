@@ -3,16 +3,22 @@ package server
 import (
 	"fmt"
 	"github.com/bokysan/socketace/v2/internal/streams"
+	"github.com/bokysan/socketace/v2/internal/streams/dns"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"net"
 )
 
 type DnsServer struct {
-	PacketServer
+	SocketServer
 }
 
 func NewDnsServer() *DnsServer {
-	return &DnsServer{}
+	return &DnsServer{
+		SocketServer{
+			name: "dns",
+		},
+	}
 }
 
 func (st *DnsServer) String() string {
@@ -20,6 +26,12 @@ func (st *DnsServer) String() string {
 }
 
 func (st *DnsServer) Startup(channels Channels) error {
+	if upstreams, err := channels.Filter(st.Channels); err != nil {
+		return errors.WithStack(err)
+	} else {
+		st.upstreams = upstreams
+	}
+
 	a := st.Address
 	switch a.Scheme {
 	case "dns":
@@ -30,18 +42,24 @@ func (st *DnsServer) Startup(channels Channels) error {
 		return errors.Errorf("This impementation does not know how to handle %s", st.Address.String())
 	}
 
-	n, err := a.Addr()
+	log.Infof("Starting UDP socket server at %s", st.String())
+	_, err := net.ListenPacket(a.Scheme, a.Host)
 	if err != nil {
 		return errors.WithStack(err)
 	}
 
-	if conn, err := net.ListenPacket(n.Network(), n.String()); err != nil {
+	conn, err := dns.NewServerDnsListener("", nil)
+	if err != nil {
 		return errors.WithStack(err)
-	} else {
-		st.PacketConnection = streams.NewDnsServerPacketConnection(conn, st.Address.String())
 	}
 
-	return st.PacketServer.Startup(channels)
+	st.listener = conn
+
+	go func() {
+		st.acceptConnection()
+	}()
+
+	return nil
 }
 
 func (st *DnsServer) Shutdown() error {

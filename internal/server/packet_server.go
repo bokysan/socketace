@@ -14,6 +14,8 @@ import (
 	"strings"
 )
 
+type ListenerFromPacketConn func(block kcp.BlockCrypt, conn net.PacketConn) (net.Listener, error)
+
 type PacketServer struct {
 	cert.ServerConfig
 
@@ -35,7 +37,15 @@ func (st *PacketServer) String() string {
 	return fmt.Sprintf("%s", st.Address.String())
 }
 
+func DefaultListenerFromPacketConn(block kcp.BlockCrypt, conn net.PacketConn) (net.Listener, error) {
+	return kcp.ServeConn(block, 10, 3, conn)
+}
+
 func (st *PacketServer) Startup(channels Channels) error {
+	return st.StartupPacket(channels, DefaultListenerFromPacketConn)
+}
+
+func (st *PacketServer) StartupPacket(channels Channels, createListenerFunc ListenerFromPacketConn) error {
 	if upstreams, err := channels.Filter(st.Channels); err != nil {
 		return errors.WithStack(err)
 	} else {
@@ -86,7 +96,7 @@ func (st *PacketServer) Startup(channels Channels) error {
 		log.Infof("Starting plain packet server at %s", st.String())
 	}
 
-	listener, err := kcp.ServeConn(block, 10, 3, st.PacketConnection)
+	listener, err := createListenerFunc(block, st.PacketConnection)
 	if err != nil {
 		return errors.WithStack(err)
 	} else {

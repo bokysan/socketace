@@ -186,8 +186,8 @@ func Test_SimpleConnection(t *testing.T) {
 	require.NoError(t, tester.clientErr, "Could not setup a client connection!")
 	require.False(t, tester.server.Secure())
 	require.False(t, tester.client.Secure())
-	require.Equal(t, SecurityTls, tester.server.SecurityTech())
-	require.Equal(t, SecurityTls, tester.client.SecurityTech())
+	require.Equal(t, "none", tester.server.SecurityTech())
+	require.Equal(t, "none", tester.client.SecurityTech())
 }
 
 func Test_SecureServer1(t *testing.T) {
