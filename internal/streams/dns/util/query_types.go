@@ -27,3 +27,16 @@ var QueryTypesByPriority = QueryTypes{
 	QueryTypeAAAA,
 	QueryTypeA,
 }
+
+// Before returns true if q1 has higher priority than q2
+func (qt QueryTypes) Before(q1, q2 dnsmessage.Type) bool {
+	var i1, i2 int
+	for i, q := range qt {
+		if q == q1 {
+			i1 = i
+		} else if q == q2 {
+			i2 = i
+		}
+	}
+	return i1 < i2
+}

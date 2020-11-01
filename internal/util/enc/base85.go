@@ -2,6 +2,7 @@ package enc
 
 import (
 	"encoding/ascii85"
+	"fmt"
 	"github.com/pkg/errors"
 	"strings"
 )
@@ -14,6 +15,10 @@ type Base85Encoder struct {
 
 func (b *Base85Encoder) Name() string {
 	return "Base85"
+}
+
+func (b *Base85Encoder) String() string {
+	return fmt.Sprintf("%v(%v)", b.Name(), string(b.Code()))
 }
 
 func (b *Base85Encoder) Code() byte {

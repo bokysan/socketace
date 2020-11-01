@@ -20,6 +20,7 @@ package enc
  */
 
 import (
+	"fmt"
 	"github.com/pkg/errors"
 	"go.chromium.org/luci/common/data/base128"
 	"sync"
@@ -64,6 +65,10 @@ type Base128Encoder struct {
 
 func (b *Base128Encoder) Name() string {
 	return "Base128"
+}
+
+func (b *Base128Encoder) String() string {
+	return fmt.Sprintf("%v(%v)", b.Name(), string(b.Code()))
 }
 
 func (b *Base128Encoder) Code() byte {

@@ -32,9 +32,6 @@ var (
 	CmdSetDownstreamFragmentSize = Command{
 		Code: 'n',
 	}
-	CmdTestDownstreamEncoder = Command{
-		Code: 'y',
-	}
 	CmdSetDownstreamEncoder = Command{
 		Code: 'o',
 	}

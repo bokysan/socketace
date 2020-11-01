@@ -21,6 +21,7 @@ package enc
 
 import (
 	"encoding/base32"
+	"fmt"
 	"github.com/pkg/errors"
 	"strings"
 )
@@ -60,6 +61,10 @@ type Base32Encoder struct {
 
 func (b *Base32Encoder) Name() string {
 	return "Base32"
+}
+
+func (b *Base32Encoder) String() string {
+	return fmt.Sprintf("%v(%v)", b.Name(), string(b.Code()))
 }
 
 func (b *Base32Encoder) Code() byte {

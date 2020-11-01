@@ -1,5 +1,10 @@
 package enc
 
+import (
+	"github.com/pkg/errors"
+	"strings"
+)
+
 type Encoder interface {
 	// Name is the user-friendly name of this encoder
 	Name() string
@@ -26,3 +31,22 @@ var (
 	Base128Encoding Encoder = &Base128Encoder{}
 	RawEncoding     Encoder = &RawEncoder{}
 )
+
+// FromCode will return an encoder based on encoder code
+func FromCode(code byte) (Encoder, error) {
+	code = strings.ToUpper(string(code))[0]
+	for _, enc := range []Encoder{
+		Base32Encoding,
+		Base64Encoding,
+		Base64uEncoding,
+		Base85Encoding,
+		Base91Encoding,
+		Base128Encoding,
+		RawEncoding,
+	} {
+		if enc.Code() == code {
+			return enc, nil
+		}
+	}
+	return nil, errors.Errorf("Unknown codec type: %v", code)
+}

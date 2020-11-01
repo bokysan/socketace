@@ -8,7 +8,7 @@ import (
 )
 
 // OnMessage is a funnction that's called when a message is received
-type OnMessage func(m *dns.Msg) (*dns.Msg, error)
+type OnMessage func(m *dns.Msg, remoteAddr net.Addr) (*dns.Msg, error)
 
 // ServerCommunicator is an an interface to accept DNS requests from a multiconnection interface implementation.
 type ServerCommunicator interface {

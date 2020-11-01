@@ -1,6 +1,7 @@
 package enc
 
 import (
+	"fmt"
 	"github.com/mtraver/base91"
 	"github.com/pkg/errors"
 )
@@ -19,6 +20,10 @@ type Base91Encoder struct {
 
 func (b *Base91Encoder) Name() string {
 	return "Base91"
+}
+
+func (b *Base91Encoder) String() string {
+	return fmt.Sprintf("%v(%v)", b.Name(), string(b.Code()))
 }
 
 func (b *Base91Encoder) Code() byte {

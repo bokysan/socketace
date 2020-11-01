@@ -92,6 +92,9 @@ func (vr *VersionResponse) Encode(e enc.Encoder) (string, error) {
 }
 
 func (vr *VersionResponse) Decode(e enc.Encoder, request string) error {
+	if request == "" {
+		return errors.Errorf("Empty string for decoding!")
+	}
 
 	if err := vr.Command().ValidateType(request); err != nil {
 		return err

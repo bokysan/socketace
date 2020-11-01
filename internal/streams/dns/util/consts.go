@@ -8,6 +8,12 @@ import (
 const (
 	HostnameMaxLen = 253 // including the final period, and the non-printed zero octet for root makes 255
 	LabelMaxlen    = 60  // See https://stackoverflow.com/questions/32290167/what-is-the-maximum-length-of-a-dns-name
+
+	// DownloadCodecCheck is the hard coded string available on both client and server which
+	// is used to check if the downstream codec works properly or not.
+	DownloadCodecCheck = "\000\000\000\000\377\377\377\377\125\125\125\125\252\252\252\252" +
+		"\201\143\310\322\307\174\262\027\137\117\316\311\111\055\122\041" +
+		"\141\251\161\040\045\263\006\163\346\330\104\060\171\120\127\277"
 )
 
 type DownstreamConfig struct {

@@ -296,41 +296,51 @@ func (dc *ClientDnsConnection) SendEncodingTestUpstream(pattern string, timeout 
 	return dc.QueryDns(data, timeout)
 }
 
-func (dc *ClientDnsConnection) SendQueryTypeTest(timeout time.Duration) error {
-	var s = downloadCodecCheck
-	slen := len(downloadCodecCheck)
+func (dc *ClientDnsConnection) SendQueryTypeTest(q dnsmessage.Type, timeout time.Duration) error {
+	var s = util.DownloadCodecCheck
+	slen := len(util.DownloadCodecCheck)
 	var trycodec enc.Encoder
 
-	if *dc.Serializer.Upstream.QueryType == util.QueryTypeNull || *dc.Serializer.Upstream.QueryType == util.QueryTypePrivate {
+	if q == util.QueryTypeNull || q == util.QueryTypePrivate {
 		trycodec = enc.RawEncoding
 	} else {
 		trycodec = enc.Base32Encoding
 	}
 
-	/* We could use 'Z' bouncing here, but 'Y' also tests that 0-255
+	/*
+	   We could use 'Z' bouncing here, but 'Y' also tests that 0-255
 	   byte values can be returned, which is needed for NULL/PRIVATE
-	   to work. */
+	   to work.
+	*/
+	oldQt := dc.Serializer.Upstream.QueryType
+	oldCodec := dc.Serializer.Downstream.Encoder
 
-	var resp *dns.Msg
-	if r, err := dc.SendEncodingTestDownstream(trycodec, timeout); err != nil {
-		return err
-	} else {
-		resp = r
+	dc.Serializer.Upstream.QueryType = &q
+	dc.Serializer.Downstream.Encoder = trycodec
+
+	req := &commands.TestDownstreamEncoderRequest{
+		DownstreamEncoder: trycodec,
 	}
+	resp, err := dc.Query(req, timeout)
 
-	in, read, err := dc.ParseDnsResponse(commands.CmdTestDownstreamEncoder, resp)
+	dc.Serializer.Upstream.QueryType = oldQt
+	dc.Serializer.Downstream.Encoder = oldCodec
+
 	if err != nil {
 		return err
 	}
+
+	data := resp.(*commands.TestDownstreamEncoderResponse).Data
+	read := len(data)
 
 	if read != slen {
 		return errors.Errorf("Got %v bytes but expected %v", slen, read)
 	}
 
 	for k := 0; k < slen; k++ {
-		if in[k] != s[k] {
+		if data[k] != s[k] {
 			/* corrupted */
-			return errors.Errorf("Got back corrupted stream!")
+			return errors.Errorf("Got back corrupted stream at position %v!", k)
 		}
 	}
 
@@ -474,8 +484,7 @@ func (dc *ClientDnsConnection) SendEncodingTestDownstream(downenc enc.Encoder, t
 }
 
 func (dc *ClientDnsConnection) AutoDetectQueryType() error {
-	highestWorking := 100
-
+	var highestWorking dnsmessage.Type = 0
 	log.Debugf("Autodetecting DNS query type")
 
 	/*
@@ -489,25 +498,24 @@ func (dc *ClientDnsConnection) AutoDetectQueryType() error {
 	*/
 
 	for timeout := 1; !dc.Closed() && timeout <= 3; timeout++ {
-		for qtNumber := 0; !dc.Closed() && qtNumber < highestWorking; qtNumber++ {
-			if qtNumber >= len(util.QueryTypesByPriority) {
-				break /* this round finished */
-			}
-			queryType := util.QueryTypesByPriority[qtNumber]
-
-			log.Tracef("Testing for %s...", queryType)
-
-			if err := dc.SendQueryTypeTest(secs(timeout)); err == nil {
-				/* okay */
-				highestWorking = qtNumber
-				break
+		for _, q := range util.QueryTypesByPriority {
+			log.Tracef("Testing for %v...", q)
+			if err := dc.SendQueryTypeTest(q, secs(timeout)); err == nil {
+				if highestWorking == 0 || util.QueryTypesByPriority.Before(q, highestWorking) {
+					log.Infof("Query type %v works.", q)
+					/* okay */
+					highestWorking = q
+					break
+				} else {
+					log.Debugf("Query type %v works, but more optional (%v) already found.", q, highestWorking)
+				}
 				/* try others with longer timeout */
 			} else {
 				/* else: try next qtype with same timeout */
-				log.Tracef("Testing for %s failed", queryType)
+				log.Tracef("%s failed: %v", q, err)
 			}
 		}
-		if highestWorking == 0 {
+		if highestWorking == util.QueryTypeNull {
 			/* good, we have NULL; abort immediately */
 			break
 		}
@@ -520,7 +528,7 @@ func (dc *ClientDnsConnection) AutoDetectQueryType() error {
 	}
 
 	/* finished */
-	if highestWorking >= len(util.QueryTypesByPriority) {
+	if highestWorking == 0 {
 
 		/* also catches highestworking still 100 */
 		err := errors.Errorf("No suitable DNS query type found. Are you connected to a network?")
@@ -528,7 +536,7 @@ func (dc *ClientDnsConnection) AutoDetectQueryType() error {
 	}
 
 	/* "using qtype" message printed in Handshake function */
-	dc.Serializer.Upstream.QueryType = &util.QueryTypesByPriority[highestWorking]
+	dc.Serializer.Upstream.QueryType = &highestWorking
 
 	return nil /* okay */
 }
@@ -559,15 +567,15 @@ func (dc *ClientDnsConnection) AutodetectEdns0Extension() {
 			return
 		}
 
-		if read > 0 && read != len(downloadCodecCheck) {
+		if read > 0 && read != len(util.DownloadCodecCheck) {
 			log.WithError(err).Warnf("reply incorrect = unreliable, will not enable EDNS0: %+v", err)
 			dc.Serializer.UseEdns0 = false
 			return
 		}
 
 		if read > 0 {
-			for k := 0; k < len(downloadCodecCheck); k++ {
-				if in[k] != downloadCodecCheck[k] {
+			for k := 0; k < len(util.DownloadCodecCheck); k++ {
+				if in[k] != util.DownloadCodecCheck[k] {
 					log.WithError(err).Warnf("reply cannot be matched, will not enable EDNS0: %+v", err)
 					dc.Serializer.UseEdns0 = false
 					return
@@ -758,13 +766,13 @@ func (dc *ClientDnsConnection) TestDownstreamEncoder(trycodec enc.Encoder) error
 			return err /* hard error */
 		}
 
-		if read > 0 && read != len(downloadCodecCheck) {
+		if read > 0 && read != len(util.DownloadCodecCheck) {
 			return errors.New("reply incorrect = unreliable")
 		}
 
 		if read > 0 {
-			for k := 0; k < len(downloadCodecCheck); k++ {
-				if in[k] != downloadCodecCheck[k] {
+			for k := 0; k < len(util.DownloadCodecCheck); k++ {
+				if in[k] != util.DownloadCodecCheck[k] {
 					return errors.New("Definitely not reliable")
 				}
 			}

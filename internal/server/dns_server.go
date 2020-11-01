@@ -48,10 +48,7 @@ func (st *DnsServer) Startup(channels Channels) error {
 		return errors.WithStack(err)
 	}
 
-	conn, err := dns.NewServerDnsListener("", nil)
-	if err != nil {
-		return errors.WithStack(err)
-	}
+	conn := dns.NewServerDnsListener("", nil)
 
 	st.listener = conn
 

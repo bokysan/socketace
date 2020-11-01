@@ -21,6 +21,7 @@ package enc
 
 import (
 	"encoding/base64"
+	"fmt"
 	"github.com/pkg/errors"
 )
 
@@ -38,6 +39,10 @@ type Base64uEncoder struct {
 
 func (b *Base64uEncoder) Name() string {
 	return "Base64u"
+}
+
+func (b *Base64uEncoder) String() string {
+	return fmt.Sprintf("%v(%v)", b.Name(), string(b.Code()))
 }
 
 func (b *Base64uEncoder) Code() byte {
