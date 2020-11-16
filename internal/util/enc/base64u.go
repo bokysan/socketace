@@ -67,3 +67,7 @@ func (b *Base64uEncoder) TestPatterns() []string {
 		"aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZ_0129-",
 	}
 }
+
+func (b *Base64uEncoder) Ratio() float64 {
+	return 4 / 3
+}

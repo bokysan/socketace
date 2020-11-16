@@ -35,7 +35,9 @@ func echoService(r io.ReadCloser, w io.WriteCloser) error {
 	for true {
 		l, prefix, err := scanner.ReadLine()
 		if err == io.EOF {
-			return nil
+			if len(line) == 0 {
+				return nil
+			}
 		} else if err != nil {
 			return err
 		} else if prefix {
@@ -57,6 +59,10 @@ func echoService(r io.ReadCloser, w io.WriteCloser) error {
 		}
 
 		line = make([]byte, 0)
+
+		if err == io.EOF {
+			return nil
+		}
 	}
 
 	return nil

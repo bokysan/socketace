@@ -89,3 +89,7 @@ func (b *Base32Encoder) TestPatterns() []string {
 		"aA" + cb32,
 	}
 }
+
+func (b *Base32Encoder) Ratio() float64 {
+	return 8 / 5
+}

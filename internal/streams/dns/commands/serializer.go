@@ -7,7 +7,6 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/net/dns/dnsmessage"
 	"math"
-	"sort"
 )
 
 type Serializer struct {
@@ -15,6 +14,7 @@ type Serializer struct {
 	Downstream    util.DownstreamConfig
 	UseEdns0      bool
 	UseMultiQuery bool
+	UseLazyMode   bool
 	Domain        string
 }
 
@@ -31,20 +31,30 @@ func (cl Serializer) DetectCommandType(data string) *Command {
 
 // EncodeDnsResponse will take a DNS response and create a DNS message
 func (cl Serializer) EncodeDnsResponse(resp Response) (*dns.Msg, error) {
-	data, err := resp.Encode(cl.Downstream.Encoder)
+	return cl.EncodeDnsResponseWithParams(resp, *cl.Upstream.QueryType, cl.Downstream.Encoder)
+}
+
+// EncodeDnsResponse will take a DNS response and create a DNS message
+func (cl Serializer) EncodeDnsResponseWithParams(resp Response, qt dnsmessage.Type, downstream enc.Encoder) (*dns.Msg, error) {
+	data, err := resp.Encode(downstream)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-	return util.WrapDnsResponse([]byte(data), *cl.Upstream.QueryType)
+	return util.WrapDnsResponse([]byte(data), qt)
 }
 
 // DecodeDnsResponse will take a DNS message and decode it into one of the DNS response object
 func (cl Serializer) DecodeDnsResponse(msg *dns.Msg) (Response, error) {
+	return cl.DecodeDnsResponseWithParams(msg, cl.Downstream.Encoder)
+}
+
+// DecodeDnsResponse will take a DNS message and decode it into one of the DNS response object
+func (cl Serializer) DecodeDnsResponseWithParams(msg *dns.Msg, downstream enc.Encoder) (Response, error) {
 	data := util.UnwrapDnsResponse(msg)
 	for _, c := range Commands {
 		if c.IsOfType(data) {
 			req := c.NewResponse()
-			err := req.Decode(cl.Downstream.Encoder, data)
+			err := req.Decode(downstream, data)
 			return req, err
 		}
 	}
@@ -53,14 +63,19 @@ func (cl Serializer) DecodeDnsResponse(msg *dns.Msg) (Response, error) {
 
 // EncodeDnsRequest will take a Request and encode it as a DNS message
 func (cl Serializer) EncodeDnsRequest(req Request) (*dns.Msg, error) {
-	data, err := req.Encode(cl.Upstream.Encoder)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-
 	qt := util.QueryTypeCname
 	if cl.Upstream.QueryType != nil {
 		qt = *cl.Upstream.QueryType
+	}
+
+	return cl.EncodeDnsRequestWithParams(req, qt, cl.Upstream.Encoder)
+}
+
+// EncodeDnsRequestWithParams will take a Request and encode it as a DNS message using given (overriden) params
+func (cl Serializer) EncodeDnsRequestWithParams(req Request, qt dnsmessage.Type, upstream enc.Encoder) (*dns.Msg, error) {
+	data, err := req.Encode(upstream)
+	if err != nil {
+		return nil, errors.WithStack(err)
 	}
 
 	msg := &dns.Msg{}
@@ -130,31 +145,16 @@ func (cl Serializer) EncodeDnsRequest(req Request) (*dns.Msg, error) {
 }
 
 // DecodeDnsRequest will take a DNS message and decode it into one of the DNS requests objects
-func (cl Serializer) DecodeDnsRequest(msg *dns.Msg) (Request, error) {
-	var data string
-	if len(msg.Question) > 1 {
-		questions := append([]dns.Question{}, msg.Question...)
-		sort.Slice(questions, func(i, j int) bool {
-			i1 := enc.Base32CharToInt(questions[i].Name[0])
-			i2 := enc.Base32CharToInt(questions[i].Name[1])
-			j1 := enc.Base32CharToInt(questions[j].Name[0])
-			j2 := enc.Base32CharToInt(questions[j].Name[1])
-			return i1+i2*32 < j1+j2*32
-		})
-		for _, v := range questions {
-			// remove first two characters
-			data += stripDomain(v.Name, cl.Domain)[2:]
-		}
-	} else {
-		data = stripDomain(msg.Question[0].Name, cl.Domain)
-	}
-
+func (cl Serializer) DecodeDnsRequest(request string) (Request, error) {
 	for _, c := range Commands {
-		if c.IsOfType(data) {
+		if c.IsOfType(request) {
 			req := c.NewRequest()
-			err := req.Decode(cl.Upstream.Encoder, data)
+			err := req.Decode(cl.Upstream.Encoder, request)
+			if err != nil {
+				err = errors.Wrapf(err, "Could not decode request using %v upstream encoder: %q", cl.Upstream.Encoder, request)
+			}
 			return req, err
 		}
 	}
-	return nil, errors.Errorf("Invalid request. Don't know how to handle command type: %v", data[0])
+	return nil, errors.Errorf("Invalid request. Don't know how to handle command type: %v", string(request[0]))
 }

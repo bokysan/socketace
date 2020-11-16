@@ -21,5 +21,5 @@ type Response interface {
 	// EncodeResponse will encode this response into a data stream which can be the sent as a DNS response.
 	Encode(e enc.Encoder) (string, error)
 	// DecodeResponse will take a byte (data) stream and create a response object
-	Decode(e enc.Encoder, request string) error
+	Decode(e enc.Encoder, response string) error
 }

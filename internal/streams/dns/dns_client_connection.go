@@ -19,46 +19,39 @@ package dns
  */
 
 import (
-	"bytes"
-	"container/list"
-	"crypto/rand"
-	"encoding/binary"
 	"github.com/bokysan/socketace/v2/internal/streams/dns/commands"
 	"github.com/bokysan/socketace/v2/internal/streams/dns/util"
 	"github.com/bokysan/socketace/v2/internal/util/enc"
-	"github.com/miekg/dns"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/xtaci/smux"
 	"golang.org/x/net/dns/dnsmessage"
-	"io"
+	"math"
+	"math/rand"
 	"net"
-	"net/http"
+	"os"
+	"sync"
 	"time"
 )
 
 // ClientDnsConnection will simulate connections over a DNS server request/response loop
 type ClientDnsConnection struct {
-	Communicator    ClientCommunicator
-	protocolVersion uint32
-
-	Serializer commands.Serializer
-
-	fragmentSize      uint16
+	Communicator      ClientCommunicator
+	Serializer        commands.Serializer
+	protocolVersion   uint32
+	fragmentSize      uint32
 	handshakeComplete bool
-	lazymode          commands.LazyMode // -L 1: use lazy mode for low-latency (default). 0: don't (implies -I1)\n"
-	selectTimeout     int
+	lazymode          bool       // -L 1: use lazy mode for low-latency (default). 0: don't (implies -I1)\n"
+	selectTimeout     int        // How often to query the server, in milliseconds
+	lastQuery         time.Time  // last time any query was executed against the DNS
+	callMutex         sync.Mutex // synchronize calls to DNS
+	commMutex         sync.Mutex // synchronize calls to DNS
 
-	querySize byte
+	chunkId []uint16 // DNS chunk ID
+	userId  uint16   // The sequential ID of the userConnection (basically "session ID")
 
-	chunkId []uint16
-	userId  byte // The sequential ID of the user (basically "session ID")
-
-	output *list.List // Queue of outgoing packets
-	input  *list.List // Queue of incoming packets
-
-	outpkt *Packet // Current outgoing packet
-	inpkt  *Packet // Current incoming packet
+	in  util.InQueue
+	out util.OutQueue
 }
 
 // -I max interval between requests (default 4 sec) to prevent DNS timeouts\n"
@@ -66,19 +59,22 @@ type ClientDnsConnection struct {
 // NewClientDnsConnection will create a new packet connection which will wrap a packet connection over DNS
 func NewClientDnsConnection(topDomain string, communicator ClientCommunicator) (*ClientDnsConnection, error) {
 
-	return &ClientDnsConnection{
+	client := &ClientDnsConnection{
 		protocolVersion: ProtocolVersion,
 		chunkId:         []uint16{0, 0, 0},
 		Communicator:    communicator,
-		lazymode:        commands.LazyModeOff,
+		lazymode:        false,
 		Serializer: commands.Serializer{
 			Domain: topDomain,
 			Upstream: util.UpstreamConfig{
-				MtuSize: DefaultUpstreamMtuSize,
+				FragmentSize: DefaultUpstreamMtuSize,
 			},
 			Downstream: util.DownstreamConfig{},
 		},
-	}, nil
+	}
+	client.out.OnChunkAdded = client.outChunkAdded
+
+	return client, nil
 }
 
 // Close will close the underlying stream. If the Close has already been called, it will do nothing
@@ -91,12 +87,28 @@ func (dc *ClientDnsConnection) Closed() bool {
 	return dc.Communicator.Closed()
 }
 
-// QueryDns is a low-level function which will take the (already calculated) full hostname and
+// Query is a low-level function which will take the (already calculated) full hostname and
 // execute a DNS lookup query using the given type. It will not do any transcoding / encoding. It is
 // expected from the caller to have already done appropriate conversion. If the call succeeds, it returns
 // a (low-level) DNS reply, which is exptected to be parsed by the caller.
 func (dc *ClientDnsConnection) Query(req commands.Request, timeout time.Duration) (commands.Response, error) {
-	reqMsg, err := dc.Serializer.EncodeDnsRequest(req)
+	return dc.QueryWithData(
+		req,
+		timeout,
+		*dc.Serializer.Upstream.QueryType,
+		dc.Serializer.Upstream.Encoder,
+		dc.Serializer.Downstream.Encoder,
+	)
+}
+
+// Query is a low-level function which will take the (already calculated) full hostname and
+// execute a DNS lookup query using the given type. It will not do any transcoding / encoding. It is
+// expected from the caller to have already done appropriate conversion. If the call succeeds, it returns
+// a (low-level) DNS reply, which is exptected to be parsed by the caller.
+func (dc *ClientDnsConnection) QueryWithData(req commands.Request, timeout time.Duration, qt dnsmessage.Type, upstream, downstream enc.Encoder) (commands.Response, error) {
+	dc.callMutex.Lock()
+
+	reqMsg, err := dc.Serializer.EncodeDnsRequestWithParams(req, qt, upstream)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -110,190 +122,49 @@ func (dc *ClientDnsConnection) Query(req commands.Request, timeout time.Duration
 	reqMsg.Id = dc.chunkId[0]
 
 	respMsg, _, err := dc.Communicator.SendAndReceive(reqMsg, &timeout)
+
+	dc.callMutex.Unlock()
+
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	resp, err := dc.Serializer.DecodeDnsResponse(respMsg)
+	resp, err := dc.Serializer.DecodeDnsResponseWithParams(respMsg, downstream)
 	if err != nil {
 		return resp, err
 	}
 
+	if e, ok := resp.(*commands.ErrorResponse); ok {
+		return resp, e.Err
+	}
+
 	if req.Command().Code != resp.Command().Code {
-		return resp, errors.Errorf("Invalid response. Sent request %v, but got %v.", req.Command().Code, resp.Command().Code)
+		return resp, errors.Errorf(
+			"Invalid response. Sent request %v, but got %v.",
+			req.Command().String(),
+			resp.Command().String(),
+		)
 	}
 
 	return resp, nil
 }
 
-// QueryDns is a low-level function which will take the (already calculated) full hostname and
-// execute a DNS lookup query using the given type. It will not do any transcoding / encoding. It is
-// expected from the caller to have already done appropriate conversion. If the call succeeds, it returns
-// a (low-level) DNS reply, which is exptected to be parsed by the caller.
-func (dc *ClientDnsConnection) QueryDns(hostname string, timeout time.Duration) (*dns.Msg, error) {
-	// Push previous chunks down the queue
-	dc.chunkId = append([]uint16{dc.chunkId[0] + 7727}, dc.chunkId[0:2]...)
-	if dc.chunkId[0] == 0 {
-		/* 0 is used as "no-query" in iodined.c */
-		dc.chunkId[0] = 7727
-	}
-
-	qt := util.QueryTypeCname
-	if dc.Serializer.Upstream.QueryType != nil {
-		qt = *dc.Serializer.Upstream.QueryType
-	}
-
-	msg := &dns.Msg{}
-	msg.RecursionDesired = true
-	msg.Id = dc.chunkId[0]
-	msg.Question = []dns.Question{
-		{
-			Name:   hostname,
-			Qtype:  uint16(qt),
-			Qclass: uint16(dnsmessage.ClassINET),
-		},
-	}
-
-	if dc.Serializer.UseEdns0 {
-		msg.SetEdns0(16384, true)
-	}
-
-	msg, _, err := dc.Communicator.SendAndReceive(msg, &timeout)
-
-	return msg, err
-
-}
-
-func (dc *ClientDnsConnection) dns_decode(q *dns.Msg) ([]byte, int, error) {
-	rr := q.Answer[0]
-	switch v := rr.(type) {
-	case *dns.NULL:
-		return []byte(v.Data), len(v.Data), nil
-	case *dns.PrivateRR:
-		return []byte(v.Data.String()), v.Data.Len(), nil
-	case *dns.CNAME:
-		// TODO: Copy this from iodine
-		return nil, 0, http.ErrNotSupported
-	case *dns.A:
-		return nil, 0, http.ErrNotSupported
-	case *dns.AAAA:
-		return nil, 0, http.ErrNotSupported
-	case *dns.MX:
-		/* We support 250 records, 250*(255+header) ~= 64kB.
-		   Only exact 10-multiples are accepted, and gaps in
-		   numbering are not jumped over (->truncated).
-		   Hopefully DNS servers won't mess around too much.
-		*/
-		for i := 0; i < len(q.Answer); i++ {
-			return nil, 0, http.ErrNotSupported
-		}
-	case *dns.SRV:
-		/* We support 250 records, 250*(255+header) ~= 64kB.
-		   Only exact 10-multiples are accepted, and gaps in
-		   numbering are not jumped over (->truncated).
-		   Hopefully DNS servers won't mess around too much.
-		*/
-		return nil, 0, http.ErrNotSupported
-	case *dns.TXT:
-		return nil, 0, http.ErrNotSupported
-	}
-
-	return nil, 0, errors.Errorf("Unknown response time: %v", rr)
-
-}
-
-// ParseDnsResponse will unwrap the specified message and extract the raw bytes from the response.
-func (dc *ClientDnsConnection) ParseDnsResponse(expectedCommand commands.Command, q *dns.Msg) ([]byte, int, error) {
-	if !q.Response {
-		err := errors.Errorf("Expected response but got request")
-		log.WithError(err).Warnf("Could not parse response: %v", err)
-		return nil, 0, err
-	}
-
-	if q.Id != dc.chunkId[0] {
-		err := errors.Errorf("Expected response for chunk %v but got response for chunk %v", dc.chunkId, q.Id)
-		log.WithError(err).Warnf("Could not parse response: %v", err)
-		return nil, 0, err
-	}
-
-	if q.Answer == nil || len(q.Answer) == 0 {
-		err := errors.Errorf("Missing answer section")
-		log.WithError(err).Warnf("Could not parse response: %v", err)
-		return nil, 0, err
-	}
-
-	ans := q.Answer[0]
-	name := ans.Header().Name
-
-	if !expectedCommand.IsOfType(name) {
-		err := errors.Errorf("Invalid command. Expected %v, got %v", expectedCommand, name[0])
-		log.WithError(err).Warnf("Could not parse response: %v", err)
-		return nil, 0, err
-	}
-
-	data, read, err := dc.dns_decode(q)
-
-	if err != nil {
-		return data, read, err
-	}
-
-	/* if still here: reply matches our latest query */
-
-	/* Non-recursive DNS servers (such as [a-m].root-servers.net)
-	   return no answer, but only additional and authority records.
-	   Can't explicitly test for that here, just assume that
-	   NOERROR is such situation. Only trigger on the very first
-	   requests (Y or V, depending if -T given).
-	*/
-
-	if q.Rcode == dns.RcodeSuccess && !expectedCommand.ExpectsEmptyReply() {
-		err := errors.Errorf(
-			"Got empty reply. "+
-				"This nameserver may not be resolving recursively, use another. "+
-				"Try \"iodine [options] ns.%s %s\" first, it might just work.",
-			dc.Serializer.Domain, dc.Serializer.Domain)
-		log.WithError(err).Warnf("Could not parse response: %v", err)
-		return nil, 0, err
-	}
-
-	/* If we get an immediate SERVFAIL on the Handshake query
-	   we're waiting for, wait a while before sending the next.
-	   SERVFAIL reliably happens during fragsize autoprobe, but
-	   mostly long after we've moved along to some other queries.
-	   However, some DNS relays, once they throw a SERVFAIL, will
-	   for several secs apply it immediately to _any_ new query
-	   for the same topdomain. When this happens, waiting a while
-	   is the only option that works.
-	*/
-	if q.Rcode == dns.RcodeServerFailure {
-		<-time.After(time.Second)
-	}
-
-	return data, read, err
-
-}
-
-func (dc *ClientDnsConnection) SendEncodingTestUpstream(pattern string, timeout time.Duration) (*dns.Msg, error) {
+func (dc *ClientDnsConnection) SendEncodingTestUpstream(pattern string, timeout time.Duration) (*commands.TestUpstreamEncoderResponse, error) {
 	/* NOTE: String may be at most 63-4=59 chars to fit in 1 dns chunk. */
 
-	seed := make([]byte, 5)
-
-	var randSeed uint32
-	if err := binary.Read(rand.Reader, binary.LittleEndian, &randSeed); err != nil {
-		return nil, err
+	req := &commands.TestUpstreamEncoderRequest{
+		UserId:  dc.userId,
+		Pattern: pattern,
 	}
 
-	seed[1] = enc.IntToBase32Char(int(randSeed>>10) & 0x1f)
-	seed[2] = enc.IntToBase32Char(int(randSeed>>5) & 0x1f)
-	seed[3] = enc.IntToBase32Char(int(randSeed) & 0x1f)
-
-	data := commands.CmdTestUpstreamEncoder.String() +
-		string(seed) +
-		pattern +
-		"." +
-		dc.Serializer.Domain
-
-	return dc.QueryDns(data, timeout)
+	resp, err := dc.Query(req, timeout)
+	if err != nil {
+		return nil, err
+	} else if r, ok := resp.(*commands.TestUpstreamEncoderResponse); !ok {
+		return nil, errors.Errorf("Invalid response type -- expected TestUpstreamEncoderResponse")
+	} else {
+		return r, nil
+	}
 }
 
 func (dc *ClientDnsConnection) SendQueryTypeTest(q dnsmessage.Type, timeout time.Duration) error {
@@ -312,25 +183,25 @@ func (dc *ClientDnsConnection) SendQueryTypeTest(q dnsmessage.Type, timeout time
 	   byte values can be returned, which is needed for NULL/PRIVATE
 	   to work.
 	*/
-	oldQt := dc.Serializer.Upstream.QueryType
-	oldCodec := dc.Serializer.Downstream.Encoder
-
-	dc.Serializer.Upstream.QueryType = &q
-	dc.Serializer.Downstream.Encoder = trycodec
-
 	req := &commands.TestDownstreamEncoderRequest{
 		DownstreamEncoder: trycodec,
 	}
-	resp, err := dc.Query(req, timeout)
-
-	dc.Serializer.Upstream.QueryType = oldQt
-	dc.Serializer.Downstream.Encoder = oldCodec
+	resp, err := dc.QueryWithData(req, timeout, q, dc.Serializer.Upstream.Encoder, trycodec)
 
 	if err != nil {
 		return err
 	}
 
-	data := resp.(*commands.TestDownstreamEncoderResponse).Data
+	response, ok := resp.(*commands.TestDownstreamEncoderResponse)
+	if !ok {
+		return errors.Errorf("Invalid response -- expected TestDownstreamEncoderResponse")
+	}
+
+	if response.Err != nil {
+		return response.Err
+	}
+
+	data := response.Data
 	read := len(data)
 
 	if read != slen {
@@ -348,112 +219,7 @@ func (dc *ClientDnsConnection) SendQueryTypeTest(q dnsmessage.Type, timeout time
 	return nil
 }
 
-// BuildHostname will encode the given data using the supplied encoder a into a dns-valid hostname. E.g. if your
-// domain is `d.example.com` you will get something like `lsdfkowefowfe.jvjs7unhjnklax....d.example.com`. The method
-// will make sure that:
-// - the hostname length does not exceed 250 bytes ([RFC 1035](https://www.ietf.org/rfc/rfc1035.txt))
-// - each specific segment does not exeed 60 bytes (safe value; RFC staates it can be up to 63 bytes though)
-//
-// It will not do any cache-invalidation -- it's up to the caller to ensure proper uniqueness of the hostname
-func (dc *ClientDnsConnection) BuildHostname(cmd commands.Command, data []byte, encoder enc.Encoder) (string, error) {
-	// cmd
-	// data
-	// .topdomain
-
-	buf := ""
-	buf += cmd.String()
-	buf += encoder.Encode(data)
-
-	buf = util.Dotify(buf)
-
-	if buf[len(buf)-1] != '.' {
-		buf += "."
-	}
-	buf += dc.Serializer.Domain
-
-	if len(buf) > util.HostnameMaxLen-2 {
-		return "", util.ErrTooLong
-	}
-
-	return buf, nil
-}
-
-// SendAndReceive will take the (already encoded) data, slap a random at the end (to prevent query caching),
-// add the top domain and call QueryDns.
-func (dc *ClientDnsConnection) SendAndReceive(cmd commands.Command, data string, timeout time.Duration) (*dns.Msg, error) {
-	/* Add lower 15 bits of rand seed as base32, followed by a dot and the tunnel domain and send */
-	seed := make([]byte, 3)
-	if err := binary.Read(rand.Reader, binary.LittleEndian, &seed); err != nil {
-		return nil, err
-	}
-
-	seed[0] = enc.ByteToBase32Char(seed[0])
-	seed[1] = enc.ByteToBase32Char(seed[1])
-	seed[2] = enc.ByteToBase32Char(seed[2])
-
-	hostname := cmd.String()
-	if cmd.RequiresUser() {
-		hostname += string(enc.ByteToBase32Char(dc.userId))
-	}
-	hostname += string(seed)
-	if data != "" {
-		hostname += data
-		if len(hostname) > util.LabelMaxlen {
-			hostname = util.Dotify(hostname)
-		}
-	}
-	hostname += "." + dc.Serializer.Domain
-	if len(hostname) > util.HostnameMaxLen-2 {
-		return nil, util.ErrTooLong
-	}
-
-	return dc.QueryDns(hostname, timeout)
-}
-
-func (dc *ClientDnsConnection) SendChunk(timeout time.Duration) (*dns.Msg, error) {
-	//datacmc := 0
-	//datacmcchars := "abcdefghijklmnopqrstuvwxyz0123456789"
-	//
-	//p = outpkt.data
-	//p += outpkt.offset
-	//avail = outpkt.len - outpkt.offset
-	//
-	///* Note: must be same, or smaller than SendFragmentSizeTest() */
-	//outpkt.sentlen = build_hostname(buf+5, sizeof(buf)-5, p, avail,
-	//	topdomain, dataenc, HostnameMaxlen)
-	//
-	///* Build upstream data header (see doc/proto_xxxxxxxx.txt) */
-	//
-	//buf[0] = dc.userid_char /* First byte is hex userid */
-	//
-	//code = ((outpkt.seqno & 7) << 2) | ((outpkt.fragment & 15) >> 2)
-	//buf[1] = b32_5to8(code) /* Second byte is 3 bits seqno, 2 upper bits fragment count */
-	//
-	//code = ((outpkt.fragment & 3) << 3) | (inpkt.seqno & 7)
-	//buf[2] = b32_5to8(code) /* Third byte is 2 bits lower fragment count, 3 bits downstream packet seqno */
-	//
-	//code = ((inpkt.fragment & 15) << 1) | (outpkt.sentlen == avail)
-	//buf[3] = b32_5to8(code) /* Fourth byte is 4 bits downstream fragment count, 1 bit last frag flag */
-	//
-	//buf[4] = datacmcchars[datacmc] /* Fifth byte is data-CMC */
-	//datacmc++
-	//if datacmc >= 36 {
-	//	datacmc = 0
-	//}
-	//
-	//return dc.QueryDns(buf)
-	return nil, nil
-}
-
-func (dc *ClientDnsConnection) SendPing(timeout time.Duration) (*dns.Msg, error) {
-	data := []byte{
-		byte((dc.inpkt.SeqNo&7)<<4) | (dc.inpkt.Fragment & 15),
-	}
-
-	return dc.SendAndReceive(commands.CmdPing, string(enc.Base32Encoding.Encode(data)), timeout)
-}
-
-func (dc *ClientDnsConnection) VersionHandshake() (serverVersion uint32, err error) {
+func (dc *ClientDnsConnection) VersionHandshake() (err error) {
 	for i := 0; !dc.Closed() && i < 5; i++ {
 		var resp commands.Response
 		resp, err = dc.Query(&commands.VersionRequest{
@@ -464,7 +230,7 @@ func (dc *ClientDnsConnection) VersionHandshake() (serverVersion uint32, err err
 			dc.userId = response.UserId
 
 			log.Debugf("Version ok, both using protocol v 0x%08x. You are user #%d", ProtocolVersion, dc.userId)
-			return response.ServerVersion, nil
+			return nil
 		}
 		log.WithError(err).Infof("Retrying version check: %v", err)
 	}
@@ -479,8 +245,23 @@ func (dc *ClientDnsConnection) VersionHandshake() (serverVersion uint32, err err
 // SendEncodingTestDownstream will send a specific downstream encoder to the server and expect a
 // pre-determined response. We know that the encoder works properly because we will match the response
 // to what we have on file. If the strings match -- encoder works.
-func (dc *ClientDnsConnection) SendEncodingTestDownstream(downenc enc.Encoder, timeout time.Duration) (*dns.Msg, error) {
-	return dc.SendAndReceive(commands.CmdTestDownstreamEncoder, string(downenc.Code()), timeout)
+func (dc *ClientDnsConnection) SendEncodingTestDownstream(downenc enc.Encoder, timeout time.Duration) (*commands.TestDownstreamEncoderResponse, error) {
+	resp, err := dc.QueryWithData(
+		&commands.TestDownstreamEncoderRequest{
+			DownstreamEncoder: downenc,
+		},
+		timeout,
+		*dc.Serializer.Upstream.QueryType,
+		dc.Serializer.Upstream.Encoder,
+		downenc,
+	)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	} else if r, ok := resp.(*commands.TestDownstreamEncoderResponse); ok {
+		return r, nil
+	} else {
+		return nil, errors.Errorf("Invalid return type -- not TestDownstreamEncoderResponse")
+	}
 }
 
 func (dc *ClientDnsConnection) AutoDetectQueryType() error {
@@ -512,7 +293,7 @@ func (dc *ClientDnsConnection) AutoDetectQueryType() error {
 				/* try others with longer timeout */
 			} else {
 				/* else: try next qtype with same timeout */
-				log.Tracef("%s failed: %v", q, err)
+				log.Warnf("%s failed: %v", q, err)
 			}
 		}
 		if highestWorking == util.QueryTypeNull {
@@ -522,7 +303,7 @@ func (dc *ClientDnsConnection) AutoDetectQueryType() error {
 	}
 
 	if dc.Closed() {
-		err := errors.Wrapf(io.ErrClosedPipe, "Stopped while autodetecting DNS query type.")
+		err := errors.Wrapf(os.ErrClosed, "Stopped while autodetecting DNS query type.")
 		log.WithError(err).Warnf("%v", err)
 		return err /* problem */
 	}
@@ -551,43 +332,30 @@ func (dc *ClientDnsConnection) AutodetectEdns0Extension() {
 	}
 
 	for i := 0; !dc.Closed() && i < 3; i++ {
-		var resp *dns.Msg
-		if r, err := dc.SendEncodingTestDownstream(trycodec, secs(i+1)); err != nil {
-			log.WithError(err).Warnf("Could not send request, will not enable EDNS0: %+v", err)
-			dc.Serializer.UseEdns0 = false
-			return
-		} else {
-			resp = r
-		}
-
-		in, read, err := dc.ParseDnsResponse(commands.CmdTestDownstreamEncoder, resp)
+		resp, err := dc.SendEncodingTestDownstream(trycodec, secs(i+1))
 		if err != nil {
-			log.WithError(err).Warnf("Could not parse response, will not enable EDNS0: %+v", err)
-			dc.Serializer.UseEdns0 = false
-			return
+			log.WithError(err).Warnf("Could not communicate with the server, will retry EDNS0: %+v", err)
+			continue
 		}
 
-		if read > 0 && read != len(util.DownloadCodecCheck) {
+		if len(resp.Data) != len(util.DownloadCodecCheck) {
 			log.WithError(err).Warnf("reply incorrect = unreliable, will not enable EDNS0: %+v", err)
 			dc.Serializer.UseEdns0 = false
 			return
 		}
 
-		if read > 0 {
-			for k := 0; k < len(util.DownloadCodecCheck); k++ {
-				if in[k] != util.DownloadCodecCheck[k] {
-					log.WithError(err).Warnf("reply cannot be matched, will not enable EDNS0: %+v", err)
-					dc.Serializer.UseEdns0 = false
-					return
-				}
+		for k := 0; k < len(util.DownloadCodecCheck); k++ {
+			if resp.Data[k] != util.DownloadCodecCheck[k] {
+				log.WithError(err).Warnf("reply cannot be matched, will not enable EDNS0: %+v", err)
+				dc.Serializer.UseEdns0 = false
+				return
 			}
-			/* if still here, then all okay */
-			log.Debugf("Using EDNS0 extension")
-			dc.Serializer.UseEdns0 = true
-			return
 		}
 
-		log.Debugf("Retrying EDNS0 support test...")
+		/* if still here, then all okay */
+		log.Debugf("Using EDNS0 extension")
+		dc.Serializer.UseEdns0 = true
+		return
 	}
 
 	log.Debugf("Timeout. Will not enable EDNS0 extension.")
@@ -602,59 +370,48 @@ func (dc *ClientDnsConnection) EncodingTestUpstream(testPattern string) error {
 	   0: not identical or error or timeout
 	   1: identical string returned
 	*/
+
+	if testPattern[0:2] != "aA" {
+		testPattern = "aA" + testPattern // Prefix pattern with case sensitivity test
+	}
 	slen := len(testPattern)
 
 	for i := 0; !dc.Closed() && i < 3; i++ {
-		var resp *dns.Msg
-		if r, err := dc.SendEncodingTestUpstream(testPattern, secs(i+1)); err != nil {
+		var resp *commands.TestUpstreamEncoderResponse
+		if r, err := dc.SendEncodingTestUpstream(testPattern, secs(i+1)); err == smux.ErrTimeout {
+			log.Debug("Retrying upstream codec test...")
+			continue
+		} else if err != nil {
 			return err
 		} else {
 			resp = r
 		}
 
-		in, read, err := dc.ParseDnsResponse(commands.CmdTestUpstreamEncoder, resp)
-		if err != nil {
+		if len(resp.Data) != len(testPattern) {
+			return errors.Errorf("reply too short (chars dropped). Expected: %v, Got: %v", len(testPattern), len(resp.Data))
+		}
+
+		/* quick check if case swapped, to give informative error msg */
+		if resp.Data[0] != 'a' {
+			err := util.ErrCaseSwap
+			log.Infof("DNS queries get changed to uppercase, keeping upstream codec Base32: %v", err.Error())
+			return err
+		}
+		if resp.Data[1] != 'A' {
+			err := util.ErrCaseSwap
+			log.Infof("DNS queries get changed to lowercase, keeping upstream codec Base32: %v", err.Error())
 			return err
 		}
 
-		if read > 0 && read < slen+4 {
-			return errors.Errorf("reply too short (chars dropped). Expected: %v, Got: %v", slen+4, read)
+		for k := 0; k < slen; k++ {
+			if resp.Data[k] != testPattern[k] {
+				/* Definitely not reliable */
+				return errors.New("DNS changed characters")
+			}
 		}
 
-		if read > 0 {
-			/* quick check if case swapped, to give informative error msg */
-			if in[4] == 'A' {
-				err := util.ErrCaseSwap
-				log.Infof("errors.New(\"DNS queries get changed to uppercase, keeping upstream codec Base32: %v", err.Error())
-				return err
-			}
-			if in[5] == 'a' {
-				err := util.ErrCaseSwap
-				log.Infof("\"DNS queries get changed to lowercase, keeping upstream codec Base32: %v", err.Error())
-				return err
-			}
-
-			for k := 0; k < slen; k++ {
-				if in[k+4] != testPattern[k] {
-					/* Definitely not reliable */
-					if in[k+4] >= ' ' && in[k+4] <= '~' && testPattern[k] >= ' ' && testPattern[k] <= '~' {
-						log.Debugf("DNS query char %q gets changed into %q", testPattern[k], in[k+4])
-					} else {
-						log.Debugf("DNS query char %q gets changed into %q", testPattern[k], in[k+4])
-					}
-					return errors.New("DNS changed characters")
-				}
-			}
-
-			/* if still here, then all okay */
-			return nil
-		}
-
-		log.Debug("Retrying upstream codec test...")
-	}
-
-	if dc.Closed() {
-		return io.ErrClosedPipe
+		/* if still here, then all okay */
+		return nil
 	}
 
 	/* timeout */
@@ -673,17 +430,18 @@ func (dc *ClientDnsConnection) AutodetectEncodingUpstream() {
 	*/
 
 	/* Start with Base128, than move on to Base64, starting very gently to not draw attention */
-	for _, e := range []enc.Encoder{enc.Base128Encoding, enc.Base64Encoding, enc.Base64uEncoding} {
+	for _, e := range []enc.Encoder{enc.Base128Encoding, enc.Base91Encoding, enc.Base85Encoding, enc.Base64Encoding, enc.Base64uEncoding} {
 		ok := true
 		for _, pat := range e.TestPatterns() {
 			if err := dc.EncodingTestUpstream(pat); err == util.ErrCaseSwap {
 				/* DNS swaps case, msg already printed; or Ctrl-C */
 				e := enc.Base32Encoding
-				log.Tracef("DNS swaps case, falling base to %v", e.Name())
+				log.Warnf("DNS swaps case, falling base to %v", e.Name())
 				dc.Serializer.Upstream.Encoder = e
 				return
 			} else if err != nil {
 				/* Probably not okay, skip this encoding entirely */
+				log.Warnf("Encoding %v not OK: %v", e.Name(), err)
 				ok = false
 				break
 			}
@@ -702,44 +460,40 @@ func (dc *ClientDnsConnection) AutodetectEncodingUpstream() {
 	return
 }
 
-func (dc *ClientDnsConnection) SwitchEncodingUpstream() error {
-	data := string(dc.Serializer.Upstream.Encoder.Code())
+func (dc *ClientDnsConnection) SendSetEncodingUpstream(timeout time.Duration) (*commands.SetOptionsResponse, error) {
+	cmd := &commands.SetOptionsRequest{
+		UserId:          dc.userId,
+		UpstreamEncoder: dc.Serializer.Upstream.Encoder,
+	}
+	resp, err := dc.Query(cmd, timeout)
+	if err != nil {
+		return nil, err
+	} else if r, ok := resp.(*commands.SetOptionsResponse); !ok {
+		return nil, errors.Errorf("Invalid response -- expected SetUpstreamEncoderResponse: %v", resp)
+	} else {
+		return r, nil
+	}
+}
 
+func (dc *ClientDnsConnection) SetEncodingUpstream() error {
 	log.Infof("Switching upstream to codec to %v", dc.Serializer.Upstream.Encoder.Name())
-
-	for i := 0; dc.Closed() && i < 5; i++ {
-		var resp *dns.Msg
-
-		if r, err := dc.SendAndReceive(commands.CmdSetUpstreamEncoder, data, secs(i+1)); err != nil {
-			return err
+	for i := 0; !dc.Closed() && i < 5; i++ {
+		resp, err := dc.SendSetEncodingUpstream(secs(i + 1))
+		if err == smux.ErrTimeout {
+			log.Debugf("No response, retrying...")
+			continue
+		} else if err != nil {
+			e := enc.Base32Encoding
+			log.Warnf("Communication error, reverting to upstream encoder %v: %v", e, err)
+			dc.Serializer.Upstream.Encoder = e
+			return nil
+		} else if resp.Err != nil {
+			e := enc.Base32Encoding
+			log.WithError(resp.Err).Warnf("Server error, reverting to upstream encoder %v: %v", e, resp.Err)
+			dc.Serializer.Upstream.Encoder = e
+			return nil
 		} else {
-			resp = r
-		}
-
-		in, read, err := dc.ParseDnsResponse(commands.CmdSetUpstreamEncoder, resp)
-		if err != nil {
-			return err
-		}
-
-		if read > 0 {
-			if commands.BadLen.Is(in) {
-				e := enc.Base32Encoding
-				log.Warnf("Server got bad message length. Falling back to upstream codec: %v", e)
-				dc.Serializer.Upstream.Encoder = e
-				return nil
-			} else if commands.BadIp.Is(in) {
-				e := enc.Base32Encoding
-				log.Warnf("Server rejected sender IP address. Falling back to upstream codec: %v", e)
-				dc.Serializer.Upstream.Encoder = e
-				return nil
-			} else if commands.BadCodec.Is(in) {
-				e := enc.Base32Encoding
-				log.Warnf("Server rejected the %v codec. Falling back to upstream codec: %v", dc.Serializer.Upstream.Encoder, e)
-				dc.Serializer.Upstream.Encoder = e
-				return nil
-			}
-
-			log.Debugf("Server switched upstream to codec: %v", dc.Serializer.Upstream.Encoder)
+			log.Debugf("Upstream coded switched to %v", dc.Serializer.Upstream.Encoder)
 			return nil
 		}
 	}
@@ -751,36 +505,26 @@ func (dc *ClientDnsConnection) SwitchEncodingUpstream() error {
 }
 
 func (dc *ClientDnsConnection) TestDownstreamEncoder(trycodec enc.Encoder) error {
-
 	for i := 0; !dc.Closed() && i < 3; i++ {
-		var resp *dns.Msg
-
-		if r, err := dc.SendEncodingTestDownstream(trycodec, secs(i+1)); err != nil {
-			return nil
-		} else {
-			resp = r
-		}
-
-		in, read, err := dc.ParseDnsResponse(commands.CmdTestDownstreamEncoder, resp)
+		resp, err := dc.SendEncodingTestDownstream(trycodec, secs(i+1))
 		if err != nil {
-			return err /* hard error */
+			log.WithError(err).Warnf("Could not communicate with the server, will retry EDNS0: %+v", err)
+			continue
 		}
 
-		if read > 0 && read != len(util.DownloadCodecCheck) {
+		if len(resp.Data) != len(util.DownloadCodecCheck) {
 			return errors.New("reply incorrect = unreliable")
 		}
 
-		if read > 0 {
-			for k := 0; k < len(util.DownloadCodecCheck); k++ {
-				if in[k] != util.DownloadCodecCheck[k] {
-					return errors.New("Definitely not reliable")
-				}
+		for k := 0; k < len(util.DownloadCodecCheck); k++ {
+			if resp.Data[k] != util.DownloadCodecCheck[k] {
+				return errors.Wrapf(err, "reply cannot be matched, unreiable: %+v", err)
 			}
-			/* if still here, then all okay */
-			return nil
 		}
 
-		log.Debugf("Retrying downstream codec test...")
+		/* if still here, then all okay */
+		log.Debugf("Codec %+v OK", trycodec)
+		return nil
 	}
 
 	/* timeout */
@@ -828,149 +572,121 @@ func (dc *ClientDnsConnection) AutodetectEncodingDowntream() {
 	}
 }
 
-func (dc *ClientDnsConnection) SwitchEncodingDownstream() error {
-	data := string(dc.Serializer.Downstream.Encoder.Code()) + string(dc.lazymode)
-
-	log.Debugf("Switching downstream to codec %s", dc.Serializer.Downstream.Encoder.Name())
-	for i := 0; !dc.Closed() && i < 5; i++ {
-		var resp *dns.Msg
-
-		if r, err := dc.SendAndReceive(commands.CmdSetDownstreamEncoder, data, secs(i+1)); err != nil {
-			return err
-		} else {
-			resp = r
-		}
-
-		in, read, err := dc.ParseDnsResponse(commands.CmdSetDownstreamEncoder, resp)
-		if err != nil {
-			return err
-		}
-
-		if read > 0 {
-			if commands.BadLen.Is(in) {
-				err := errors.New("Server got bad message length. Falling back to downstream codec Base32")
-				log.Errorf("%v", err)
-				return nil
-			} else if commands.BadIp.Is(in) {
-				err := errors.New("Server rejected sender IP address. Falling back to downstream codec Base32")
-				log.Errorf("%v", err)
-				return nil
-			} else if commands.BadCodec.Is(in) {
-				err := errors.New("Server rejected the selected codec. Falling back to downstream codec Base32")
-				log.Errorf("%v", err)
-				return nil
-			}
-			log.Infof("Server switched downstream to codec %s", dc.Serializer.Downstream.Encoder)
-			return nil
-		}
-
-		log.Debugf("Retrying codec switch...")
+func (dc *ClientDnsConnection) SendSetEncodingDownstream(timeout time.Duration) (*commands.SetOptionsResponse, error) {
+	cmd := &commands.SetOptionsRequest{
+		UserId:            dc.userId,
+		DownstreamEncoder: dc.Serializer.Downstream.Encoder,
+		LazyMode:          &dc.lazymode,
 	}
-	if dc.Closed() {
-		return nil
+	resp, err := dc.Query(cmd, timeout)
+	if err != nil {
+		return nil, err
+	} else if r, ok := resp.(*commands.SetOptionsResponse); !ok {
+		return nil, errors.Errorf("Invalid response -- expected SetUpstreamEncoderResponse: %v", resp)
+	} else {
+		return r, nil
 	}
-
-	log.Infof("No reply from server on codec switch. Falling back to downstream codec Base32")
-
-	return nil
 }
 
-func (dc *ClientDnsConnection) TryEnableLazyMode(timeout time.Duration) (*dns.Msg, error) {
-	data := string(dc.Serializer.Downstream.Encoder.Code()) + string(commands.LazyModeOn)
-	return dc.SendAndReceive(commands.CmdSetDownstreamEncoder, data, timeout)
+func (dc *ClientDnsConnection) SetEncodingDownstream() error {
+	log.Infof("Switching downstream to codec to %v", dc.Serializer.Downstream.Encoder.Name())
+	for i := 0; !dc.Closed() && i < 5; i++ {
+		resp, err := dc.SendSetEncodingDownstream(secs(i + 1))
+		if err == smux.ErrTimeout {
+			log.Debugf("No response, retrying...")
+			continue
+		} else if err != nil {
+			e := enc.Base32Encoding
+			log.WithError(err).Warnf("Communication error, reverting to downstream encoder %v: %v", e, err)
+			dc.Serializer.Downstream.Encoder = e
+			return nil
+		} else if resp.Err != nil {
+			e := enc.Base32Encoding
+			log.WithError(resp.Err).Warnf("Server error, reverting to downstream encoder %v: %v", e, resp.Err)
+			dc.Serializer.Downstream.Encoder = e
+			return nil
+		} else {
+			log.Debugf("Downstream coded switched to %v", dc.Serializer.Downstream.Encoder)
+			return nil
+		}
+	}
+
+	e := enc.Base32Encoding
+	log.Debugf("No reply from server on codec switch. Falling back to downstream codec: %v", e)
+	dc.Serializer.Downstream.Encoder = e
+	return nil
 }
 
 // SendFragmentSizeTest will send a request for a "junk" fragment of specified size. This will allow us to check
 // if the (response) fragment of that size can pass through the DNS or not
-func (dc *ClientDnsConnection) SendFragmentSizeTest(fragsize uint16, timeout time.Duration) (*dns.Msg, error) {
-	data := &bytes.Buffer{}
-	if err := binary.Write(data, binary.LittleEndian, &fragsize); err != nil {
-		return nil, err
+func (dc *ClientDnsConnection) SendFragmentSizeTest(fragsize uint32, timeout time.Duration) (*commands.TestDownstreamFragmentSizeResponse, error) {
+	req := &commands.TestDownstreamFragmentSizeRequest{
+		UserId:       dc.userId,
+		FragmentSize: fragsize,
 	}
-	return dc.SendAndReceive(commands.CmdTestFragmentSize, string(enc.Base32Encoding.Encode(data.Bytes())), timeout)
+	resp, err := dc.Query(req, timeout)
+	if err != nil {
+		return nil, err
+	} else if r, ok := resp.(*commands.TestDownstreamFragmentSizeResponse); !ok {
+		return nil, errors.Errorf("Invalid response -- expected TestDownstreamFragmentSizeResponse")
+	} else {
+		return r, nil
+	}
 }
 
-func (dc *ClientDnsConnection) CheckFragmentSizeResponse(in []byte, proposed uint16, max uint16) (uint16, bool, error) {
-	/* Returns:
-	0: keep checking == true
-	1: break loop (either okay or definitely wrong) == false
-	*/
-
-	if commands.BadIp.Is(in) {
-		return 0, false, errors.Errorf("got BADIP (Try iodined -c)..")
-	}
-
-	var acknowledged uint16
-	if err := binary.Read(bytes.NewBuffer(in), binary.LittleEndian, &acknowledged); err != nil {
-		return max, false, err
-	}
-
-	if acknowledged != proposed {
-		/*
-		 * got ack for wrong fragsize, maybe late response for
-		 * earlier query, or ack corrupted
-		 */
-		return max, true, errors.Errorf("Expected %d bytes but server acknowledged %d", proposed, acknowledged)
-	}
-
-	in = in[2:]
-
-	if uint16(len(in)) != proposed {
-		/*
-		 * correctly acked fragsize but read too little (or too
-		 * much): this fragsize is definitely not reliable
-		 */
-		return max, true, errors.Errorf("Expected %d bytes but got back %d. Maybe decoding issue?", proposed, len(in))
-	}
-
+func (dc *ClientDnsConnection) CheckFragmentSizeResponse(in []byte) error {
 	/* Check for corruption */
 	v := byte(107)
 	for idx, i := range in {
 		if i != v {
-			if dc.Serializer.Downstream.Encoder == enc.Base32Encoding {
-				return 0, false, errors.Errorf("corruption at byte %d using %v encoder this won't work.", idx+2, dc.Serializer.Downstream.Encoder)
-			} else {
-				return 0, false, errors.Errorf("corruption at byte %d using %v encoder this won't work. Try Base32 downstream encoder.", idx+2, dc.Serializer.Downstream.Encoder)
-			}
+			return errors.Errorf("corruption at byte %d using %v encoder this won't work.", idx, dc.Serializer.Downstream.Encoder)
 		}
 		v = (v + 107) & 0xff
 	}
 
-	return acknowledged, true, nil
+	return nil
 }
 
-func (dc *ClientDnsConnection) AutodetectFragmentSize() (uint16, error) {
-	var proposed uint16 = 768
-	var fragmentRange uint16 = 768
-	var max uint16 = 0
+func (dc *ClientDnsConnection) AutodetectFragmentSize() (uint32, error) {
+	var proposed uint32 = 768
+	var fragmentRange uint32 = 8192 - proposed
+	var max uint32 = 0
 
 	log.Debugf("Autoprobing max downstream fragment size... (skip with -m fragsize)")
 	for !dc.Closed() && (fragmentRange >= 8 || max < 300) {
 		/* stop the slow probing early when we have enough bytes anyway */
 		for i := 0; !dc.Closed() && i < 3; i++ {
-			var resp *dns.Msg
-			if r, err := dc.SendFragmentSizeTest(proposed, secs(1)); err != nil {
-				return 0, err
-			} else {
-				resp = r
+			resp, err := dc.SendFragmentSizeTest(proposed, secs(1))
+			if err == smux.ErrTimeout {
+				continue
+			} else if err != nil {
+				log.WithError(err).Warnf("Communication error: %v", err)
+				break
+			} else if resp.Err != nil {
+				log.WithError(resp.Err).Warnf("Server error: %v", resp.Err)
+				break
 			}
 
-			in, read, err := dc.ParseDnsResponse(commands.CmdTestFragmentSize, resp)
-			if err != nil {
-				return 0, err
-			}
-
-			if read > 0 {
-				/* We got a reply */
-				if m, ok, err := dc.CheckFragmentSizeResponse(in, proposed, max); ok {
-					max = m
-					break
-				} else if !ok && err != nil {
-					return 0, errors.WithStack(err)
+			if proposed != resp.FragmentSize {
+				// Keep max as is
+				log.Warnf("Expected %d bytes but server acknowledged %d", proposed, resp.FragmentSize)
+				break
+			} else if uint32(len(resp.Data)) != resp.FragmentSize {
+				log.Warnf("Expected %d bytes but server returned %d", proposed, resp.FragmentSize)
+				break
+			} else if err := dc.CheckFragmentSizeResponse(resp.Data); err != nil {
+				err = errors.WithStack(err)
+				if dc.Serializer.Downstream.Encoder == enc.Base32Encoding {
+					log.WithError(err).Errorf("Corruption in downstream even with the most basic (Base32) encoder: %v", err)
+					return 0, err
 				} else {
-					max = m
+					log.WithError(err).Errorf("Corruption in downstream even with %v. Try Base32 downstream enodeer: %v", dc.Serializer.Downstream.Encoder, err)
+					return 0, err
 				}
+			} else {
+				max = proposed
 			}
+
 			if max < 0 {
 				break
 			}
@@ -1003,7 +719,7 @@ func (dc *ClientDnsConnection) AutodetectFragmentSize() (uint16, error) {
 	}
 
 	/* data header adds 2 bytes */
-	log.Infof("will use %d-2=%d\n", max, max-2)
+	log.Infof("will use %d-2=%d", max, max-2)
 
 	/* need 1200 / 16frags = 75 bytes fragsize */
 	if max < 82 {
@@ -1021,115 +737,66 @@ func (dc *ClientDnsConnection) AutodetectFragmentSize() (uint16, error) {
 }
 
 func (dc *ClientDnsConnection) AutodetectLazyMode() {
-
 	log.Debugf("Switching to lazy mode for low-latency")
+	dc.lazymode = true
+
 	for i := 0; !dc.Closed() && i < 5; i++ {
-		var resp *dns.Msg
-
-		if r, err := dc.TryEnableLazyMode(secs(i + 1)); err != nil {
-			log.WithError(err).Errorf("Could set lazy mode: %v", err)
-			dc.lazymode = commands.LazyModeOff
-			dc.selectTimeout = 1
-			return
+		resp, err := dc.SendSetEncodingDownstream(secs(i + 1))
+		if err == smux.ErrTimeout {
+			log.Debugf("No response, retrying...")
+			continue
+		} else if err != nil {
+			log.WithError(err).Warnf("Communication error, disabling lazy mode: %v", err)
+			dc.lazymode = false
+		} else if resp.Err != nil {
+			log.WithError(resp.Err).Warnf("Server error, disabling lazy mode: %v", resp.Err)
+			dc.lazymode = false
 		} else {
-			resp = r
-		}
-
-		in, read, err := dc.ParseDnsResponse(commands.CmdSetDownstreamEncoder, resp)
-		if err != nil {
-			log.WithError(err).Errorf("Could not parse response: %v", err)
-			dc.lazymode = commands.LazyModeOff
-			dc.selectTimeout = 1
+			log.Debugf("Lazy mode switched to %v", dc.lazymode)
 			return
 		}
-
-		if read > 0 {
-			if commands.BadLen.Is(in) {
-				log.Errorf("Server got bad message length. Falling back to legacy mode.")
-				dc.lazymode = commands.LazyModeOff
-				dc.selectTimeout = 1
-				return
-			} else if commands.BadIp.Is(in) {
-				log.Errorf("Server rejected sender IP address. Falling back to legacy mode.")
-				dc.lazymode = commands.LazyModeOff
-				dc.selectTimeout = 1
-				return
-			} else if commands.BadCodec.Is(in) {
-				log.Errorf("Server rejected lazy mode. Falling back to legacy mode.")
-				dc.lazymode = commands.LazyModeOff
-				dc.selectTimeout = 1
-				return
-			} else if commands.LazyModeOk.Is(in) {
-				log.Debugf("Server switched to lazy mode.")
-				dc.lazymode = commands.LazyModeOn
-				return
-			}
-		}
-
-		log.Debugf("Retrying lazy mode switch...")
-	}
-	if dc.Closed() {
-		return
 	}
 
-	log.Debugf("No reply from server on lazy switch.")
-	log.Infof("Falling back to legacy mode.")
-	dc.lazymode = commands.LazyModeOff
-	dc.selectTimeout = 1
-
+	log.Debugf("No reply from server on lazy mode switch. Falling back to legacy mode.")
+	dc.lazymode = false
+	dc.selectTimeout = 1000
 }
 
-func (dc *ClientDnsConnection) SendSetDownstreamFragmentSize(fragsize uint16, timeout time.Duration) (*dns.Msg, error) {
-	data := &bytes.Buffer{}
-	data.Write([]byte{dc.userId})
-	if err := binary.Write(data, binary.LittleEndian, &fragsize); err != nil {
+func (dc *ClientDnsConnection) SendSetDownstreamFragmentSize(fragsize uint32, timeout time.Duration) (*commands.SetOptionsResponse, error) {
+	cmd := &commands.SetOptionsRequest{
+		UserId:                 dc.userId,
+		DownstreamFragmentSize: &fragsize,
+	}
+	resp, err := dc.Query(cmd, timeout)
+	if err != nil {
 		return nil, err
+	} else if r, ok := resp.(*commands.SetOptionsResponse); !ok {
+		return nil, errors.Errorf("Invalid response -- expected SetDownstreamFragmentSizeResponse: %v", resp)
+	} else {
+		return r, nil
 	}
-	return dc.SendAndReceive(commands.CmdSetDownstreamFragmentSize, string(enc.Base32Encoding.Encode(data.Bytes())), timeout)
 }
 
-func (dc *ClientDnsConnection) SwitchFragmentSize(requested uint16) error {
+func (dc *ClientDnsConnection) SwitchFragmentSize(requested uint32) error {
 	log.Infof("Setting downstream fragment size to max %d...", requested)
 
 	for i := 0; !dc.Closed() && i < 5; i++ {
-		var resp *dns.Msg
-		if r, err := dc.SendSetDownstreamFragmentSize(requested, secs(i+1)); err != nil {
+		resp, err := dc.SendSetDownstreamFragmentSize(requested, secs(i+1))
+
+		if err == smux.ErrTimeout {
+			log.Debugf("Retrying set fragsize...")
+			continue
+		} else if err != nil {
+			err = errors.WithStack(err)
+			log.WithError(err).Warnf("Communication error. Keeping default fragment size.")
+			return err
+		} else if resp.Err != nil {
+			log.WithError(resp.Err).Warnf("Server error. Keeping default fragment size %v", resp.Err)
 			return err
 		} else {
-			resp = r
-		}
-
-		in, read, err := dc.ParseDnsResponse(commands.CmdSetDownstreamFragmentSize, resp)
-		if err != nil {
-			return err
-		}
-
-		if read > 0 {
-			if commands.BadFrag.Is(in) {
-				log.Warnf("Server rejected fragsize. Keeping default.")
-				return nil
-			} else if commands.BadIp.Is(in) {
-				log.Warnf("Server rejected fragsize (BADIP). Keeping default.")
-				return nil
-			}
-
-			var accepted uint16
-			data := bytes.NewBuffer(in)
-			if err := binary.Read(data, binary.LittleEndian, &accepted); err != nil {
-				return err
-			}
-
-			if accepted != requested {
-				log.Warnf("Server responded with the different frag size (%d) than requested (%d). Keeping default.", accepted, requested)
-				return nil
-			}
-
-			log.Debugf("Upgrading fragment size to %d...", accepted)
-			dc.fragmentSize = accepted
+			dc.fragmentSize = requested
 			return nil
 		}
-
-		log.Debugf("Retrying set fragsize...")
 	}
 	if dc.Closed() {
 		return nil
@@ -1152,7 +819,7 @@ func (dc *ClientDnsConnection) Handshake() error {
 
 	log.Infof("Using DNS type %s queries", dc.Serializer.Upstream.QueryType)
 
-	if _, err := dc.VersionHandshake(); err != nil {
+	if err := dc.VersionHandshake(); err != nil {
 		return err
 	}
 
@@ -1162,36 +829,38 @@ func (dc *ClientDnsConnection) Handshake() error {
 
 	dc.AutodetectEdns0Extension()
 	if dc.Closed() {
-		return errors.Wrapf(io.ErrClosedPipe, "Stream closed, stopping Handshake.")
+		return errors.Wrapf(os.ErrClosed, "Stream closed, stopping Handshake.")
 	}
 
 	dc.AutodetectEncodingUpstream()
 	if dc.Closed() {
-		return errors.Wrapf(io.ErrClosedPipe, "Stream closed, stopping Handshake.")
+		return errors.Wrapf(os.ErrClosed, "Stream closed, stopping Handshake.")
 	}
 
-	if err := dc.SwitchEncodingUpstream(); err != nil {
+	if err := dc.SetEncodingUpstream(); err != nil {
 		return err
 	}
 	if dc.Closed() {
-		return errors.Wrapf(io.ErrClosedPipe, "Stream closed, stopping Handshake.")
+		return errors.Wrapf(os.ErrClosed, "Stream closed, stopping Handshake.")
 	}
+
+	dc.Serializer.Upstream.FragmentSize = dc.getUpstreamMtu()
 
 	dc.AutodetectEncodingDowntream()
 	if dc.Closed() {
-		return errors.Wrapf(io.ErrClosedPipe, "Stream closed, stopping Handshake.")
+		return errors.Wrapf(os.ErrClosed, "Stream closed, stopping Handshake.")
 	}
 
-	if err := dc.SwitchEncodingDownstream(); err != nil {
+	if err := dc.SetEncodingDownstream(); err != nil {
 		return err
 	}
 	if dc.Closed() {
-		return errors.Wrapf(io.ErrClosedPipe, "Stream closed, stopping Handshake.")
+		return errors.Wrapf(os.ErrClosed, "Stream closed, stopping Handshake.")
 	}
 
 	dc.AutodetectLazyMode()
 	if dc.Closed() {
-		return errors.Wrapf(io.ErrClosedPipe, "Stream closed, stopping Handshake.")
+		return errors.Wrapf(os.ErrClosed, "Stream closed, stopping Handshake.")
 	}
 
 	if f, err := dc.AutodetectFragmentSize(); err != nil {
@@ -1200,15 +869,163 @@ func (dc *ClientDnsConnection) Handshake() error {
 		return err
 	}
 
+	dc.Serializer.Upstream.FragmentSize = dc.getUpstreamMtu()
+
+	go func() {
+		var errCount int
+		var lastErr error
+
+		for !dc.Closed() {
+			jitter := rand.Intn(300) - 150
+			duration := time.Duration(dc.selectTimeout+jitter+(errCount*200)) * time.Millisecond
+			select {
+			case <-time.After(duration):
+				if !dc.lastQuery.Add(duration).After(time.Now()) {
+					chunk := dc.out.NextChunk()
+					if err := dc.SendAndReceive(chunk); err == commands.BadConn {
+						// Server closed the connection
+						log.Infof("Server closed the connection. Closing on our end.")
+						if !dc.Closed() {
+							err = errors.WithStack(dc.Close())
+							if err != nil {
+								log.WithError(err).Warnf("Failed closing the connection: %v", err)
+							}
+						}
+					} else if err != nil {
+						if lastErr == err {
+							errCount++
+
+							if errCount > 5 {
+								log.WithError(err).Warnf("Can't communicate. Giving up: %v", err)
+								if !dc.Closed() {
+									err = errors.WithStack(dc.Close())
+									if err != nil {
+										log.WithError(err).Warnf("Failed closing the connection: %v", err)
+									}
+								}
+							}
+						} else {
+							lastErr = err
+							errCount = 0
+						}
+					} else {
+						lastErr = nil
+						errCount = 0
+					}
+				}
+			}
+		}
+	}()
+
+	log.Infof(
+		"Handshake complete. "+
+			"Connected to %v. "+
+			"You are user %v. "+
+			"Upstream encoding = %v (1:%f), size=%d "+
+			"Downstream encoding = %v (1:%f). size=%d",
+
+		dc.Serializer.Domain,
+		dc.userId,
+		dc.Serializer.Upstream.Encoder,
+		dc.Serializer.Upstream.Encoder.Ratio(),
+		dc.Serializer.Upstream.FragmentSize,
+		dc.Serializer.Downstream.Encoder,
+		dc.Serializer.Downstream.Encoder.Ratio(),
+		dc.Serializer.Downstream.FragmentSize,
+	)
+
 	return nil
 }
 
-func (dc *ClientDnsConnection) Read(b []byte) (n int, err error) {
-	panic("implement me")
+func (dc *ClientDnsConnection) getUpstreamMtu() uint32 {
+
+	// Available space is maximum query length
+	space := float64(util.HostnameMaxLen)
+	// minus domain length minus dot before domain
+	space = space - float64(len(dc.Serializer.Domain)) - 1
+
+	// minus command len and cache invalidation len
+	space = space - float64(len(dc.Serializer.Domain)) - 4
+
+	// And decrease by the space the encoder spends
+	space = space / dc.Serializer.Upstream.Encoder.Ratio()
+
+	// minus header that's reserved for Chunk request (with safety margin)
+	space = space - 8
+
+	// minus all dots that need to be inserted
+	space = space - space/util.LabelMaxlen
+
+	if dc.Serializer.UseMultiQuery {
+		space = space - 2
+		space = space * 1024
+	}
+
+	return uint32(math.Floor(space))
+}
+
+// SendAndReceive will send a chunk of data to the server (if available). If not it will "just" send a ping and
+// receive any data waiting for the client.
+func (dc *ClientDnsConnection) SendAndReceive(chunk *util.Packet) error {
+	dc.commMutex.Lock()
+	defer dc.commMutex.Unlock()
+
+	req := &commands.PacketRequest{
+		UserId:         dc.userId,
+		LastAckedSeqNo: dc.in.NextSeqNo - 1,
+		Packet:         chunk,
+	}
+
+	for i := 1; i <= 5; i++ {
+		timeout := time.Duration(i) * time.Second
+		if resp, err := dc.Query(req, timeout); err == smux.ErrTimeout {
+			if i == 5 {
+				return err
+			} else {
+				continue
+			}
+		} else if err != nil {
+			return err
+		} else {
+			dc.lastQuery = time.Now()
+			if packet, ok := resp.(*commands.PacketResponse); ok {
+				if packet.Err != nil {
+					return packet.Err
+				}
+				dc.out.UpdateAcked(packet.LastAckedSeqNo)
+
+				return dc.in.Append(packet.Packet)
+			} else {
+				return errors.Errorf("Invalid response -- expected Packet")
+			}
+		}
+	}
+	return nil
+}
+
+// outChunkAdded is called whenever a new chunk is created for the outgoing stream
+func (dc *ClientDnsConnection) outChunkAdded() error {
+	for chunk := dc.out.NextChunk(); chunk != nil; chunk = dc.out.NextChunk() {
+		err := dc.SendAndReceive(chunk)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (dc *ClientDnsConnection) Write(b []byte) (n int, err error) {
-	panic("implement me")
+	if dc.Closed() {
+		return 0, os.ErrClosed
+	}
+	return dc.out.Write(b, dc.Serializer.Upstream.FragmentSize)
+}
+
+func (dc *ClientDnsConnection) Read(b []byte) (n int, err error) {
+	if dc.Closed() {
+		return 0, os.ErrClosed
+	}
+	return dc.in.Read(b)
 }
 
 func (dc *ClientDnsConnection) LocalAddr() net.Addr {

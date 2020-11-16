@@ -1,26 +1,24 @@
 package commands
 
 import (
-	"crypto/rand"
-	"encoding/binary"
 	"github.com/bokysan/socketace/v2/internal/streams/dns/util"
 	"github.com/bokysan/socketace/v2/internal/util/enc"
+	"github.com/miekg/dns"
+	"math/rand"
+	"sort"
 	"strings"
 )
 
 // randomChars returns three random characters which will make sure that the request is not cached
-func randomChars() (string, error) {
-	/* Add lower 15 bits of rand seed as base32, followed by a dot and the tunnel domain and send */
+func randomChars() string {
+	const BASE36 = "abcdefghijklmnopqrstuvwxyz0123456789"
+
 	seed := make([]byte, 3)
-	if err := binary.Read(rand.Reader, binary.LittleEndian, &seed); err != nil {
-		return "", err
-	}
+	seed[0] = BASE36[rand.Intn(36)]
+	seed[1] = BASE36[rand.Intn(36)]
+	seed[2] = BASE36[rand.Intn(36)]
 
-	seed[0] = enc.ByteToBase32Char(seed[0])
-	seed[1] = enc.ByteToBase32Char(seed[1])
-	seed[2] = enc.ByteToBase32Char(seed[2])
-
-	return string(seed), nil
+	return string(seed)
 }
 
 // prepareHostname will finalize hostname -- add dots in the name, if needed. It will verify that the total
@@ -47,4 +45,26 @@ func stripDomain(data, domain string) string {
 	} else {
 		return util.Undotify(data)
 	}
+}
+
+// ComposeRequest will take a DNS message and recompose it back to a complete request, if multiQuery was used
+func ComposeRequest(msg *dns.Msg, domain string) string {
+	var data string
+	if len(msg.Question) > 1 {
+		questions := append([]dns.Question{}, msg.Question...)
+		sort.Slice(questions, func(i, j int) bool {
+			i1 := enc.Base32CharToInt(questions[i].Name[0])
+			i2 := enc.Base32CharToInt(questions[i].Name[1])
+			j1 := enc.Base32CharToInt(questions[j].Name[0])
+			j2 := enc.Base32CharToInt(questions[j].Name[1])
+			return i1+i2*32 < j1+j2*32
+		})
+		for _, v := range questions {
+			// remove first two characters
+			data += stripDomain(v.Name, domain)[2:]
+		}
+	} else {
+		data = stripDomain(msg.Question[0].Name, domain)
+	}
+	return data
 }

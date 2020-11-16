@@ -6,10 +6,12 @@ import (
 	"github.com/bokysan/socketace/v2/internal/util/enc"
 	"github.com/pkg/errors"
 	"io"
+	"strconv"
 )
 
 var CmdVersion = Command{
-	Code: 'v',
+	Code:        'v',
+	NeedsUserId: false,
 	NewRequest: func() Request {
 		return &VersionRequest{}
 	},
@@ -27,29 +29,25 @@ func (vr *VersionRequest) Command() Command {
 }
 
 func (vr *VersionRequest) Encode(e enc.Encoder) (string, error) {
+	hostname := EncodeRequestHeader(vr.Command(), 0)
+
 	data := &bytes.Buffer{}
 	if err := binary.Write(data, binary.LittleEndian, vr.ClientVersion); err != nil {
 		return "", err
 	}
-	encoded := enc.Base32Encoding.Encode(data.Bytes())
-
-	hostname := vr.Command().String() // Always start with the command ID
-	if rnd, err := randomChars(); err != nil {
-		return "", err
-	} else {
-		hostname += rnd
-	}
-	hostname += encoded
+	hostname += enc.Base32Encoding.Encode(data.Bytes())
 	return hostname, nil
 }
 
 func (vr *VersionRequest) Decode(e enc.Encoder, req string) error {
 	// Verify the request is of proper command
-	if err := vr.Command().ValidateType(req); err != nil {
+	if rem, _, err := DecodeRequestHeader(vr.Command(), req); err != nil {
 		return err
+	} else {
+		req = rem
 	}
-	data := req[4:]
-	decode, err := enc.Base32Encoding.Decode(data)
+
+	decode, err := enc.Base32Encoding.Decode(req)
 	if err != nil {
 		return err
 	}
@@ -59,7 +57,7 @@ func (vr *VersionRequest) Decode(e enc.Encoder, req string) error {
 
 type VersionResponse struct {
 	ServerVersion uint32
-	UserId        byte
+	UserId        uint16
 	Err           error
 }
 
@@ -83,24 +81,32 @@ func (vr *VersionResponse) Encode(e enc.Encoder) (string, error) {
 		if err := data.WriteByte(0); err != nil {
 			return "", err
 		}
-		if err := data.WriteByte(vr.UserId); err != nil {
-			return "", err
-		}
 	}
 
-	return vr.Command().String() + enc.Base32Encoding.Encode(data.Bytes()), nil
+	return string(vr.Command().Code) + EncodeUserId(vr.UserId) + enc.Base32Encoding.Encode(data.Bytes()), nil
 }
 
-func (vr *VersionResponse) Decode(e enc.Encoder, request string) error {
-	if request == "" {
+func (vr *VersionResponse) Decode(e enc.Encoder, response string) error {
+	if response == "" {
 		return errors.Errorf("Empty string for decoding!")
 	}
 
-	if err := vr.Command().ValidateType(request); err != nil {
+	if err := vr.Command().ValidateType(response); err != nil {
 		return err
 	}
 
-	val, err := enc.Base32Encoding.Decode(request[1:])
+	response = response[1:]
+
+	u, err := strconv.ParseInt(response[0:2], 36, 16)
+	if err != nil {
+		return err
+	} else {
+		vr.UserId = uint16(u)
+	}
+
+	response = response[2:]
+
+	val, err := enc.Base32Encoding.Decode(response)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -120,16 +126,11 @@ func (vr *VersionResponse) Decode(e enc.Encoder, request string) error {
 		}
 		for _, e := range BadErrors {
 			if e.Error() == str {
-				vr.Err = &e
+				vr.Err = e
 				return nil
 			}
 		}
 		vr.Err = errors.New(str)
-	} else {
-		vr.UserId, err = data.ReadByte()
-		if err != nil {
-			return errors.WithStack(err)
-		}
 	}
 	return nil
 }

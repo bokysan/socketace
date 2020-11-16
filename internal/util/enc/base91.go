@@ -48,3 +48,7 @@ func (b *Base91Encoder) TestPatterns() []string {
 		cb91,
 	}
 }
+
+func (b *Base91Encoder) Ratio() float64 {
+	return 1.231
+}

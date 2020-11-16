@@ -53,3 +53,7 @@ func (b *Base85Encoder) TestPatterns() []string {
 		strings.Replace(string(str), ".", "x", -1),
 	}
 }
+
+func (b *Base85Encoder) Ratio() float64 {
+	return 1.25
+}

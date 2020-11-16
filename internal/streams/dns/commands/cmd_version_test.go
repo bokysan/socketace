@@ -31,16 +31,16 @@ func Test_VersionResponse1(t *testing.T) {
 			ServerVersion: testProtocolVersion,
 			UserId:        137,
 		}
-		encoded, err := r1.Encode(enc.Base32Encoding)
+		encoded, err := r1.Encode(nil)
 		require.NoError(t, err)
 		log.Debugf("Encoded using %v: %v", qt, encoded)
 
 		r2 := &VersionResponse{}
-		err = r2.Decode(enc.Base32Encoding, encoded)
+		err = r2.Decode(nil, encoded)
 		require.NoError(t, err)
 
-		require.Equal(t, r1.ServerVersion, r2.ServerVersion)
 		require.Equal(t, r1.UserId, r2.UserId)
+		require.Equal(t, r1.ServerVersion, r2.ServerVersion)
 	}
 }
 
@@ -48,7 +48,7 @@ func Test_VersionResponse2(t *testing.T) {
 	for _, qt := range util.QueryTypesByPriority {
 		r1 := &VersionResponse{
 			ServerVersion: testProtocolVersion,
-			Err:           &BadServerFull,
+			Err:           BadServerFull,
 		}
 		encoded, err := r1.Encode(enc.Base32Encoding)
 		require.NoError(t, err)

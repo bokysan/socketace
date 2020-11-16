@@ -31,3 +31,7 @@ func (b *RawEncoder) Decode(data string) ([]byte, error) {
 func (b *RawEncoder) TestPatterns() []string {
 	return []string{}
 }
+
+func (b *RawEncoder) Ratio() float64 {
+	return 1.00
+}

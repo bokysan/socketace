@@ -17,12 +17,12 @@ const (
 )
 
 type DownstreamConfig struct {
-	MtuSize *int        // -m max size of downstream fragments (default: autodetect)
-	Encoder enc.Encoder // -O force downstream encoding for -T other than NULL: Base32Encoding, Base64Encoding, Base64uEncoding, Base128Encoding, or (only for TXT:) RawEncoding (default: autodetect)
+	FragmentSize uint32      // -m max size of downstream fragments (default: autodetect)
+	Encoder      enc.Encoder // -O force downstream encoding for -T other than NULL: Base32Encoding, Base64Encoding, Base64uEncoding, Base128Encoding, or (only for TXT:) RawEncoding (default: autodetect)
 }
 
 type UpstreamConfig struct {
-	MtuSize   int              // -M max size of upstream hostnames (~100-255, default: 255)
-	Encoder   enc.Encoder      // -O force downstream encoding for -T other than NULL: Base32, Base64, Base64u,  Base128, or (only for TXT:) Raw  (default: autodetect)
-	QueryType *dnsmessage.Type // -T force dns type: QueryTypeNull, QueryTypePrivate, QueryTypeTxt, QueryTypeSrv, QueryTypeMx, QueryTypeCname, QueryTypeAAAA, QueryTypeA (default: autodetect)
+	FragmentSize uint32           // -M max size of upstream hostnames (~100-255, default: 255)
+	Encoder      enc.Encoder      // -O force downstream encoding for -T other than NULL: Base32, Base64, Base64u,  Base128, or (only for TXT:) Raw  (default: autodetect)
+	QueryType    *dnsmessage.Type // -T force dns type: QueryTypeNull, QueryTypePrivate, QueryTypeTxt, QueryTypeSrv, QueryTypeMx, QueryTypeCname, QueryTypeAAAA, QueryTypeA (default: autodetect)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/xtaci/smux"
 	"io"
 	"net"
+	"os"
 	"strings"
 )
 
@@ -72,7 +73,7 @@ func (ch *ConnectionHandler) acceptStream() {
 		var stream net.Conn
 
 		stream, err := ch.session.AcceptStream()
-		if err == io.ErrClosedPipe || err == io.EOF {
+		if err == os.ErrClosed || err == io.EOF {
 			log.Debugf("Stream closed, existing loop.")
 			return
 		} else if err != nil {

@@ -8,6 +8,7 @@ import (
 type Encoder interface {
 	// Name is the user-friendly name of this encoder
 	Name() string
+
 	// Code represends the short (one-letter) code for the encoder
 	Code() byte
 
@@ -19,6 +20,9 @@ type Encoder interface {
 
 	// Return a list of test patterns for the specified encoding
 	TestPatterns() []string
+
+	// Expansion ratio; e.g. the encoded array is this times longer than the original input
+	Ratio() float64
 }
 
 // Declare a list of encodings
