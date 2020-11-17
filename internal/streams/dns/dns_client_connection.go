@@ -676,7 +676,7 @@ func (dc *ClientDnsConnection) CheckFragmentSizeResponse(in []byte) error {
 
 func (dc *ClientDnsConnection) AutodetectFragmentSize() (uint32, error) {
 	var proposed uint32 = 768
-	var fragmentRange uint32 = 8192 - proposed
+	var fragmentRange = 8192 - proposed
 	var max uint32 = 0
 
 	log.Debugf("Autoprobing max downstream fragment size... (skip with -m fragsize)")
@@ -950,17 +950,17 @@ func (dc *ClientDnsConnection) Handshake() error {
 	log.Infof(
 		"Handshake complete. "+
 			"Connected to %v. "+
-			"You are user %v. "+
-			"Upstream encoding = %v (1:%f), size=%d "+
-			"Downstream encoding = %v (1:%f). size=%d",
+			"You are user #%v. "+
+			"Upstream{%v (%.2f%% loss), MTU=%d} "+
+			"Downstream{%v (%.2f%% loss). MTU=%d}",
 
 		dc.Serializer.Domain,
 		dc.userId,
-		dc.Serializer.Upstream.Encoder,
-		dc.Serializer.Upstream.Encoder.Ratio(),
+		dc.Serializer.Upstream.Encoder.Name(),
+		(1-1/dc.Serializer.Upstream.Encoder.Ratio())*100,
 		dc.Serializer.Upstream.FragmentSize,
-		dc.Serializer.Downstream.Encoder,
-		dc.Serializer.Downstream.Encoder.Ratio(),
+		dc.Serializer.Downstream.Encoder.Name(),
+		(1-1/dc.Serializer.Downstream.Encoder.Ratio())*100,
 		dc.Serializer.Downstream.FragmentSize,
 	)
 

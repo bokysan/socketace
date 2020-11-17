@@ -49,9 +49,9 @@ func Test_EncodeRequestHeaderUserWithData(t *testing.T) {
 	h := EncodeRequestHeader(cmd, 123)
 
 	data := "0123456789"
-	rem, userId, err := DecodeRequestHeader(cmd, h+data)
+	rem, userId, err := DecodeRequestHeader(cmd, append(h, data...))
 	require.NoError(t, err)
-	require.Equal(t, data, rem)
+	require.Equal(t, []byte(data), rem)
 	require.Equal(t, uint16(123), userId)
 
 }

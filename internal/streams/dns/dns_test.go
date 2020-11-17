@@ -250,8 +250,8 @@ func Test_LargeUpload(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	source := make([]byte, 1024*1024*1) // 1 MB
-	dest := make([]byte, 0)             // 1 MB
+	source := make([]byte, 1024*512) // 512 kb
+	dest := make([]byte, 0)
 	n, err := rand.Read(source)
 	require.NoError(t, err)
 	l := len(source)
@@ -338,8 +338,8 @@ func Test_LargeDownload(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	source := make([]byte, 1024*1024*1) // 1 MB
-	dest := make([]byte, 0)             // 1 MB
+	source := make([]byte, 1024*512) // 512 kb
+	dest := make([]byte, 0)
 	n, err := rand.Read(source)
 	require.NoError(t, err)
 	l := len(source)
