@@ -7,12 +7,17 @@ import (
 	"github.com/miekg/dns"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/net/dns/dnsmessage"
 	"golang.org/x/net/webdav"
+	"io"
 	"net"
 	"os"
 	"sync"
 	"time"
 )
+
+var ConnectionTimeout = 5 * time.Minute          // ConnectionTimeout specifies that connections will timeout 2 minutes after we've seen the last contact from the user
+var OldConnectionTimeout = 6 * ConnectionTimeout // Old connections will also timeout after a certain time
 
 // ServerDnsListener will simulate connections over a DNS server request/response loop
 type ServerDnsListener struct {
@@ -29,9 +34,11 @@ type userConnection struct {
 	UserId     uint16
 	Serializer commands.Serializer
 
-	localAddress  net.Addr
-	remoteAddress net.Addr
-	closer        func(u *userConnection) error
+	lastConnection time.Time
+	localAddress   net.Addr
+	remoteAddress  net.Addr
+	closer         func(u *userConnection) error
+	closed         bool
 
 	in  util.InQueue
 	out util.OutQueue
@@ -64,6 +71,45 @@ func NewServerDnsListener(topDomain string, comm ServerCommunicator) *ServerDnsL
 		usersLock:      &sync.Mutex{},
 		accept:         make(chan *userConnection, MaxUserCount),
 	}
+
+	// This function will prune stale connections
+	go func() {
+		for !srv.Closed() {
+			time.Sleep(1 * time.Minute)
+			now := time.Now()
+
+			srv.usersLock.Lock()
+
+			for _, u := range srv.connections {
+				if u == nil {
+					continue
+				}
+
+				if u.lastConnection.Add(ConnectionTimeout).Before(now) {
+					// Remove connection from our list
+					log.Infof("Removing stale user connection for user %d (%s)", u.UserId, u.remoteAddress)
+					srv.connections[u.UserId] = nil
+					srv.oldConnections[u.UserId] = u
+				}
+			}
+
+			for _, u := range srv.oldConnections {
+				if u == nil {
+					continue
+				}
+
+				if u.lastConnection.Add(OldConnectionTimeout).Before(now) {
+					// Remove connection from our list
+					log.Infof("Removing stale old connection for user %d (%s)", u.UserId, u.remoteAddress)
+					srv.connections[u.UserId] = nil
+					srv.oldConnections[u.UserId] = u
+				}
+			}
+
+			srv.usersLock.Unlock()
+		}
+	}()
+
 	comm.RegisterAccept(srv.onMessage)
 
 	return srv
@@ -77,15 +123,16 @@ func (s *ServerDnsListener) newUser(a net.Addr) (*userConnection, error) {
 	for i, u := range s.connections {
 		if u == nil {
 			u = &userConnection{
-				localAddress:  s.Addr(),
-				remoteAddress: a,
-				UserId:        uint16(i),
-				Serializer:    s.DefaultSerializer,
-				closer:        s.closeConnection,
+				lastConnection: time.Now(),
+				localAddress:   s.Addr(),
+				remoteAddress:  a,
+				UserId:         uint16(i),
+				Serializer:     s.DefaultSerializer,
+				closer:         s.closeConnection,
 			}
 			s.connections[i] = u
 
-			log.Infof("New user connection initiated for user #%d", i)
+			log.Infof("New server-side connection initiated for user #%d", i)
 
 			s.accept <- u
 			return u, nil
@@ -106,11 +153,17 @@ func (s *ServerDnsListener) closeConnection(u *userConnection) error {
 	} else if err == commands.BadIp {
 		// Connection belongs to another user, ignore
 		return nil
+	} else if err == commands.BadConn {
+		// Connection already closed
+		return nil
 	}
+
+	log.Debugf("Closing server-side connection for user #%d", u.UserId)
 
 	// Remove connection from our list
 	s.connections[u.UserId] = nil
 	s.oldConnections[u.UserId] = u
+	u.closed = true
 
 	return nil
 }
@@ -129,12 +182,15 @@ func (s *ServerDnsListener) validateAndGetUser(userId uint16, remoteAddr net.Add
 	if user.remoteAddress.String() != remoteAddr.String() {
 		return user, commands.BadIp
 	}
+
+	user.lastConnection = time.Now()
 	return user, nil
 }
 
 func (s *ServerDnsListener) onMessage(m *dns.Msg, remoteAddr net.Addr) (*dns.Msg, error) {
 	var user *userConnection
 	var cmd *commands.Command
+	var userErr error
 	serializer := s.DefaultSerializer
 	userId := uint16(0)
 
@@ -146,7 +202,7 @@ func (s *ServerDnsListener) onMessage(m *dns.Msg, remoteAddr net.Addr) (*dns.Msg
 			if err != nil {
 				return nil, err
 			}
-			user, _ = s.validateAndGetUser(userId, remoteAddr)
+			user, userErr = s.validateAndGetUser(userId, remoteAddr)
 			if user != nil {
 				serializer = user.Serializer
 			}
@@ -158,14 +214,20 @@ func (s *ServerDnsListener) onMessage(m *dns.Msg, remoteAddr net.Addr) (*dns.Msg
 	if cmd == nil {
 		return s.DefaultSerializer.EncodeDnsResponse(&commands.ErrorResponse{
 			Err: commands.BadCommand,
-		})
+		}, m)
 	}
 
 	if user == nil && cmd.NeedsUserId {
 		return s.DefaultSerializer.EncodeDnsResponse(&commands.ErrorResponse{
 			Err: commands.BadUser,
-		})
+		}, m)
+	}
 
+	if user != nil && userErr == commands.BadConn {
+		log.Warnf("User #%d attempted to use a closed connection.", user.UserId)
+		return s.DefaultSerializer.EncodeDnsResponse(&commands.ErrorResponse{
+			Err: commands.BadConn,
+		}, m)
 	}
 
 	req, err := serializer.DecodeDnsRequest(request)
@@ -174,27 +236,27 @@ func (s *ServerDnsListener) onMessage(m *dns.Msg, remoteAddr net.Addr) (*dns.Msg
 		log.WithError(err).Warnf("Failed to decode request: %v", err)
 		return s.DefaultSerializer.EncodeDnsResponse(&commands.ErrorResponse{
 			Err: commands.BadCodec,
-		})
+		}, m)
 	}
 	switch v := req.(type) {
 	case *commands.TestDownstreamEncoderRequest:
-		return s.testDownstreamEncoder(v)
+		return s.testDownstreamEncoder(v, m)
 	case *commands.TestUpstreamEncoderRequest:
-		return s.testUpstreamEncoder(v, remoteAddr)
+		return s.testUpstreamEncoder(v, m, remoteAddr)
 	case *commands.TestDownstreamFragmentSizeRequest:
-		return s.testDownstreamFragmentSize(v, remoteAddr)
+		return s.testDownstreamFragmentSize(v, m, remoteAddr)
 	case *commands.SetOptionsRequest:
-		return s.setOptionsRequest(v, remoteAddr)
+		return s.setOptionsRequest(v, m, remoteAddr)
 	case *commands.VersionRequest:
-		return s.version(v, remoteAddr)
+		return s.version(v, m, remoteAddr)
 	case *commands.PacketRequest:
-		return s.packet(v, remoteAddr)
+		return s.packet(v, m, remoteAddr)
 	}
 
 	return nil, webdav.ErrNotImplemented
 }
 
-func (s *ServerDnsListener) packet(v *commands.PacketRequest, remoteAddr net.Addr) (*dns.Msg, error) {
+func (s *ServerDnsListener) packet(v *commands.PacketRequest, m *dns.Msg, remoteAddr net.Addr) (*dns.Msg, error) {
 	resp := &commands.PacketResponse{}
 	user, err := s.validateAndGetUser(v.UserId, remoteAddr)
 	if err != nil {
@@ -211,13 +273,13 @@ func (s *ServerDnsListener) packet(v *commands.PacketRequest, remoteAddr net.Add
 		}
 	}
 	if user != nil {
-		return user.Serializer.EncodeDnsResponse(resp)
+		return user.Serializer.EncodeDnsResponse(resp, m)
 	} else {
-		return s.DefaultSerializer.EncodeDnsResponse(resp)
+		return s.DefaultSerializer.EncodeDnsResponse(resp, m)
 	}
 }
 
-func (s *ServerDnsListener) version(v *commands.VersionRequest, remoteAddr net.Addr) (*dns.Msg, error) {
+func (s *ServerDnsListener) version(v *commands.VersionRequest, m *dns.Msg, remoteAddr net.Addr) (*dns.Msg, error) {
 	resp := &commands.VersionResponse{
 		ServerVersion: ProtocolVersion,
 	}
@@ -228,40 +290,53 @@ func (s *ServerDnsListener) version(v *commands.VersionRequest, remoteAddr net.A
 	} else {
 		resp.Err = err
 	}
-	return s.DefaultSerializer.EncodeDnsResponse(resp)
+	return s.DefaultSerializer.EncodeDnsResponse(resp, m)
 }
 
-func (s *ServerDnsListener) setOptionsRequest(v *commands.SetOptionsRequest, remoteAddr net.Addr) (*dns.Msg, error) {
+func (s *ServerDnsListener) setOptionsRequest(v *commands.SetOptionsRequest, m *dns.Msg, remoteAddr net.Addr) (*dns.Msg, error) {
 	resp := &commands.SetOptionsResponse{}
 	user, err := s.validateAndGetUser(v.UserId, remoteAddr)
 	if err != nil {
 		resp.Err = err
+	} else if v.Closed != nil && *v.Closed == true {
+		log.Debugf("Client-initiated closing of the connection.")
+		_ = s.closeConnection(user)
 	} else {
+		logString := "SetOptions(user=#%d"
+		logData := make([]interface{}, 0)
+		logData = append(logData, user.UserId)
+
 		if v.UpstreamEncoder != nil {
 			user.Serializer.Upstream.Encoder = v.UpstreamEncoder
-			log.Infof("Switched upstream encoder for user #%d to %v", user.UserId, v.UpstreamEncoder)
+			logString += ", upenc=%v"
+			logData = append(logData, v.UpstreamEncoder)
 		}
 		if v.DownstreamEncoder != nil {
 			user.Serializer.Downstream.Encoder = v.DownstreamEncoder
-			log.Infof("Switched downstream encoder for user #%d to %v", user.UserId, v.DownstreamEncoder)
+			logString += ", downenc=%v"
+			logData = append(logData, v.DownstreamEncoder)
 		}
 		if v.DownstreamFragmentSize != nil {
 			user.Serializer.Downstream.FragmentSize = *v.DownstreamFragmentSize
-			log.Infof("Switched downstream fragment size for user #%d to %v", user.UserId, *v.DownstreamFragmentSize)
+			logString += ", downfrag=%v"
+			logData = append(logData, *v.DownstreamFragmentSize)
 		}
 		if v.LazyMode != nil {
 			user.Serializer.UseLazyMode = *v.LazyMode
-			log.Infof("Switched lazy mode for user #%d to %v", user.UserId, *v.LazyMode)
+			logString += ", lazy=%v"
+			logData = append(logData, *v.LazyMode)
 		}
 		if v.MultiQuery != nil {
 			user.Serializer.UseMultiQuery = *v.MultiQuery
-			log.Infof("Switched multi query for user #%d to %v", user.UserId, *v.MultiQuery)
+			logString += ", multi=%v"
+			logData = append(logData, *v.MultiQuery)
 		}
+		log.Infof(logString+")", logData...)
 	}
-	return s.DefaultSerializer.EncodeDnsResponse(resp)
+	return s.DefaultSerializer.EncodeDnsResponse(resp, m)
 }
 
-func (s *ServerDnsListener) testDownstreamFragmentSize(v *commands.TestDownstreamFragmentSizeRequest, remoteAddr net.Addr) (*dns.Msg, error) {
+func (s *ServerDnsListener) testDownstreamFragmentSize(v *commands.TestDownstreamFragmentSizeRequest, m *dns.Msg, remoteAddr net.Addr) (*dns.Msg, error) {
 	resp := &commands.TestDownstreamFragmentSizeResponse{}
 	u, err := s.validateAndGetUser(v.UserId, remoteAddr)
 	if err != nil {
@@ -276,13 +351,13 @@ func (s *ServerDnsListener) testDownstreamFragmentSize(v *commands.TestDownstrea
 		resp.FragmentSize = uint32(len(resp.Data))
 	}
 	if u != nil {
-		return u.Serializer.EncodeDnsResponse(resp)
+		return u.Serializer.EncodeDnsResponse(resp, m)
 	} else {
-		return s.DefaultSerializer.EncodeDnsResponse(resp)
+		return s.DefaultSerializer.EncodeDnsResponse(resp, m)
 	}
 }
 
-func (s *ServerDnsListener) testUpstreamEncoder(v *commands.TestUpstreamEncoderRequest, remoteAddr net.Addr) (*dns.Msg, error) {
+func (s *ServerDnsListener) testUpstreamEncoder(v *commands.TestUpstreamEncoderRequest, m *dns.Msg, remoteAddr net.Addr) (*dns.Msg, error) {
 	resp := &commands.TestUpstreamEncoderResponse{
 		Data: v.Pattern,
 	}
@@ -290,14 +365,14 @@ func (s *ServerDnsListener) testUpstreamEncoder(v *commands.TestUpstreamEncoderR
 	if err != nil {
 		resp.Err = err
 	}
-	return s.DefaultSerializer.EncodeDnsResponse(resp)
+	return s.DefaultSerializer.EncodeDnsResponse(resp, m)
 }
 
-func (s *ServerDnsListener) testDownstreamEncoder(v *commands.TestDownstreamEncoderRequest) (*dns.Msg, error) {
+func (s *ServerDnsListener) testDownstreamEncoder(v *commands.TestDownstreamEncoderRequest, m *dns.Msg) (*dns.Msg, error) {
 	resp := &commands.TestDownstreamEncoderResponse{
-		Data: []byte(util.DownloadCodecCheck),
+		Data: util.DownloadCodecCheck,
 	}
-	return s.DefaultSerializer.EncodeDnsResponseWithParams(resp, *s.DefaultSerializer.Upstream.QueryType, v.DownstreamEncoder)
+	return s.DefaultSerializer.EncodeDnsResponseWithParams(resp, m, dnsmessage.Type(m.Question[0].Qtype), v.DownstreamEncoder)
 }
 
 // Close will close the underlying stream. If the Close has already been called, it will do nothing
@@ -327,10 +402,16 @@ func (s *ServerDnsListener) Addr() net.Addr {
 }
 
 func (u *userConnection) Read(b []byte) (n int, err error) {
+	if u.closed && !u.in.HasData() {
+		return 0, io.EOF
+	}
 	return u.in.Read(b)
 }
 
 func (u *userConnection) Write(b []byte) (n int, err error) {
+	if u.closed {
+		return 0, os.ErrClosed
+	}
 	return u.out.Write(b, u.Serializer.Downstream.FragmentSize)
 }
 

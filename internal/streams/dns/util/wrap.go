@@ -49,32 +49,31 @@ func TypePriority(rr dns.RR) uint32 {
 
 // WrapDnsResponse will wrap the given data into the specificed message type. It will call one of the other
 // methods to actually do the wrapping
-func WrapDnsResponse(data []byte, queryType dnsmessage.Type) (*dns.Msg, error) {
+func WrapDnsResponse(msg *dns.Msg, data []byte, queryType dnsmessage.Type, domain string) error {
 	switch queryType {
 	case QueryTypeNull:
-		return WrapDnsResponseNull(data)
+		return WrapDnsResponseNull(msg, data, domain)
 	case QueryTypePrivate:
-		return WrapDnsResponsePrivate(data)
+		return WrapDnsResponsePrivate(msg, data, domain)
 	case QueryTypeTxt:
-		return WrapDnsResponseTxt(data)
+		return WrapDnsResponseTxt(msg, data, domain)
 	case QueryTypeMx:
-		return WrapDnsResponseMx(data)
+		return WrapDnsResponseMx(msg, data, domain)
 	case QueryTypeSrv:
-		return WrapDnsResponseSrv(data)
+		return WrapDnsResponseSrv(msg, data, domain)
 	case QueryTypeCname:
-		return WrapDnsResponseCname(data)
+		return WrapDnsResponseCname(msg, data, domain)
 	case QueryTypeAAAA:
-		return WrapDnsResponseAAAA(data)
+		return WrapDnsResponseAAAA(msg, data, domain)
 	case QueryTypeA:
-		return WrapDnsResponseA(data)
+		return WrapDnsResponseA(msg, data, domain)
 	}
 
-	return nil, errors.Errorf("Unknown query type: %v", queryType)
+	return errors.Errorf("Unknown query type: %v", queryType)
 }
 
 // WrapDnsResponseA will wrap the data into a A-type DNS response message
-func WrapDnsResponseA(data []byte) (*dns.Msg, error) {
-	msg := &dns.Msg{}
+func WrapDnsResponseA(msg *dns.Msg, data []byte, domain string) error {
 	msg.Authoritative = true
 
 	order := uint16(0)
@@ -84,7 +83,7 @@ func WrapDnsResponseA(data []byte) (*dns.Msg, error) {
 		d := make([]byte, 1)
 
 		if order > 255 {
-			return nil, errors.Errorf("Message too long.")
+			return errors.Errorf("Message too long.")
 		}
 
 		d[0] = byte(order)
@@ -98,20 +97,20 @@ func WrapDnsResponseA(data []byte) (*dns.Msg, error) {
 		}
 		msg.Answer = append(msg.Answer, &dns.A{
 			Hdr: dns.RR_Header{
-				Rrtype:   uint16(QueryTypeA),
-				Ttl:      1,
-				Rdlength: uint16(len(d)),
+				Rrtype: uint16(QueryTypeA),
+				Name:   msg.Question[0].Name,
+				Class:  dns.ClassINET,
+				Ttl:    1,
 			},
 			A: d,
 		})
 	}
 
-	return msg, nil
+	return nil
 }
 
 // WrapDnsResponseAAAA will wrap the data into a AAAA-type DNS response message
-func WrapDnsResponseAAAA(data []byte) (*dns.Msg, error) {
-	msg := &dns.Msg{}
+func WrapDnsResponseAAAA(msg *dns.Msg, data []byte, domain string) error {
 	msg.Authoritative = true
 
 	order := uint16(0)
@@ -132,20 +131,20 @@ func WrapDnsResponseAAAA(data []byte) (*dns.Msg, error) {
 		}
 		msg.Answer = append(msg.Answer, &dns.AAAA{
 			Hdr: dns.RR_Header{
-				Rrtype:   uint16(QueryTypeAAAA),
-				Ttl:      1,
-				Rdlength: uint16(len(d)),
+				Rrtype: uint16(QueryTypeAAAA),
+				Name:   msg.Question[0].Name,
+				Class:  dns.ClassINET,
+				Ttl:    1,
 			},
 			AAAA: d,
 		})
 	}
 
-	return msg, nil
+	return nil
 }
 
 // WrapDnsResponseCname will wrap the data into a CNAME-type DNS response message
-func WrapDnsResponseCname(data []byte) (*dns.Msg, error) {
-	msg := &dns.Msg{}
+func WrapDnsResponseCname(msg *dns.Msg, data []byte, domain string) error {
 	msg.Authoritative = true
 
 	order := uint16(0)
@@ -158,29 +157,36 @@ func WrapDnsResponseCname(data []byte) (*dns.Msg, error) {
 		d[0] = enc.IntToBase32Char(int(order))
 		d[1] = enc.IntToBase32Char(int(order) >> 4)
 
-		if len(data) > HostnameMaxLen-3 {
-			d = append(d, data[0:HostnameMaxLen-3]...)
-			data = data[HostnameMaxLen-3:]
+		maxLen := GetLongestDataString(domain)
+
+		if len(data) > maxLen {
+			d = append(d, data[0:maxLen]...)
+			data = data[maxLen:]
 		} else {
 			d = append(d, data...)
 			data = data[0:0]
 		}
+		target, err := PrepareHostname(d, domain)
+		if err != nil {
+			return err
+		}
+
 		msg.Answer = append(msg.Answer, &dns.CNAME{
 			Hdr: dns.RR_Header{
-				Rrtype:   uint16(QueryTypeCname),
-				Ttl:      1,
-				Rdlength: uint16(len(d)),
+				Rrtype: uint16(QueryTypeCname),
+				Name:   msg.Question[0].Name,
+				Class:  dns.ClassINET,
+				Ttl:    1,
 			},
-			Target: string(d),
+			Target: string(target),
 		})
 	}
 
-	return msg, nil
+	return nil
 }
 
 // WrapDnsResponseSrv will wrap the data into a SRV-type DNS response message
-func WrapDnsResponseSrv(data []byte) (*dns.Msg, error) {
-	msg := &dns.Msg{}
+func WrapDnsResponseSrv(msg *dns.Msg, data []byte, domain string) error {
 	msg.Authoritative = true
 
 	order := uint16(0)
@@ -189,30 +195,33 @@ func WrapDnsResponseSrv(data []byte) (*dns.Msg, error) {
 		var d []byte
 		order += 1
 
-		if len(data) > HostnameMaxLen-3 {
-			d = data[0 : HostnameMaxLen-3]
-			data = data[HostnameMaxLen-3:]
+		maxLen := GetLongestDataString(domain)
+
+		if len(data) > maxLen {
+			d = data[0:maxLen]
+			data = data[maxLen:]
 		} else {
 			d = data
 			data = data[0:0]
 		}
+		target := string(d) + "." + domain + "."
 		msg.Answer = append(msg.Answer, &dns.SRV{
 			Hdr: dns.RR_Header{
-				Rrtype:   uint16(QueryTypeSrv),
-				Ttl:      1,
-				Rdlength: uint16(len(d)),
+				Rrtype: uint16(QueryTypeSrv),
+				Name:   msg.Question[0].Name,
+				Class:  dns.ClassINET,
+				Ttl:    1,
 			},
 			Priority: order,
-			Target:   string(d),
+			Target:   target,
 		})
 	}
 
-	return msg, nil
+	return nil
 }
 
 // WrapDnsResponseMx will wrap the data into a MX-type DNS response message
-func WrapDnsResponseMx(data []byte) (*dns.Msg, error) {
-	msg := &dns.Msg{}
+func WrapDnsResponseMx(msg *dns.Msg, data []byte, domain string) error {
 	msg.Authoritative = true
 
 	order := uint16(0)
@@ -221,30 +230,38 @@ func WrapDnsResponseMx(data []byte) (*dns.Msg, error) {
 		var d []byte
 		order += 10 // MX servers usually skip by 10
 
-		if len(data) > HostnameMaxLen-3 {
-			d = data[0 : HostnameMaxLen-3]
-			data = data[HostnameMaxLen-3:]
+		maxLen := GetLongestDataString(domain)
+
+		if len(data) > maxLen {
+			d = data[0:maxLen]
+			data = data[maxLen:]
 		} else {
 			d = data
 			data = data[0:0]
 		}
+
+		target, err := PrepareHostname(d, domain)
+		if err != nil {
+			return err
+		}
+
 		msg.Answer = append(msg.Answer, &dns.MX{
 			Hdr: dns.RR_Header{
-				Rrtype:   uint16(QueryTypeMx),
-				Ttl:      1,
-				Rdlength: uint16(len(d)),
+				Rrtype: uint16(QueryTypeMx),
+				Name:   msg.Question[0].Name,
+				Class:  dns.ClassINET,
+				Ttl:    1,
 			},
 			Preference: order,
-			Mx:         string(d),
+			Mx:         string(target),
 		})
 	}
 
-	return msg, nil
+	return nil
 }
 
 // WrapDnsResponseTxt will wrap the data into a TXT-type DNS response message
-func WrapDnsResponseTxt(data []byte) (*dns.Msg, error) {
-	msg := &dns.Msg{}
+func WrapDnsResponseTxt(msg *dns.Msg, data []byte, domain string) error {
 	msg.Authoritative = true
 
 	order := uint16(0)
@@ -281,9 +298,10 @@ func WrapDnsResponseTxt(data []byte) (*dns.Msg, error) {
 		if len(txtData) == 250 {
 			msg.Answer = append(msg.Answer, &dns.TXT{
 				Hdr: dns.RR_Header{
-					Rrtype:   uint16(QueryTypeTxt),
-					Ttl:      1,
-					Rdlength: uint16(len(strings.Join(txtData, ""))),
+					Rrtype: uint16(QueryTypeTxt),
+					Name:   msg.Question[0].Name,
+					Class:  dns.ClassINET,
+					Ttl:    1,
 				},
 				Txt: txtData,
 			})
@@ -293,20 +311,20 @@ func WrapDnsResponseTxt(data []byte) (*dns.Msg, error) {
 	if len(txtData) > 0 {
 		msg.Answer = append(msg.Answer, &dns.TXT{
 			Hdr: dns.RR_Header{
-				Rrtype:   uint16(QueryTypeTxt),
-				Ttl:      1,
-				Rdlength: uint16(len(strings.Join(txtData, ""))),
+				Rrtype: uint16(QueryTypeTxt),
+				Name:   msg.Question[0].Name,
+				Class:  dns.ClassINET,
+				Ttl:    1,
 			},
 			Txt: txtData,
 		})
 	}
 
-	return msg, nil
+	return nil
 }
 
 // WrapDnsResponsePrivate will wrap the data into a PRIVATE-type DNS response message
-func WrapDnsResponsePrivate(data []byte) (*dns.Msg, error) {
-	msg := &dns.Msg{}
+func WrapDnsResponsePrivate(msg *dns.Msg, data []byte, domain string) error {
 	msg.Authoritative = true
 
 	// Max len for NULL record type is 65535 octects
@@ -326,21 +344,21 @@ func WrapDnsResponsePrivate(data []byte) (*dns.Msg, error) {
 		}
 		msg.Answer = append(msg.Answer, &dns.PrivateRR{
 			Hdr: dns.RR_Header{
-				Rrtype:   uint16(QueryTypePrivate),
-				Ttl:      1,
-				Rdlength: uint16(len(d)),
+				Rrtype: uint16(QueryTypePrivate),
+				Name:   msg.Question[0].Name,
+				Class:  dns.ClassINET,
+				Ttl:    1,
 			},
 			Data: &SocketAcePrivate{
 				Data: d,
 			},
 		})
 	}
-	return msg, nil
+	return nil
 }
 
 // WrapDnsResponseNull will wrap the data into a NULL-type DNS response message
-func WrapDnsResponseNull(data []byte) (*dns.Msg, error) {
-	msg := &dns.Msg{}
+func WrapDnsResponseNull(msg *dns.Msg, data []byte, domain string) error {
 	msg.Authoritative = true
 
 	// Max len for NULL record type is 65535 octects
@@ -360,19 +378,20 @@ func WrapDnsResponseNull(data []byte) (*dns.Msg, error) {
 		}
 		msg.Answer = append(msg.Answer, &dns.NULL{
 			Hdr: dns.RR_Header{
-				Rrtype:   uint16(QueryTypeNull),
-				Ttl:      1,
-				Rdlength: uint16(len(d)),
+				Rrtype: uint16(QueryTypeNull),
+				Name:   msg.Question[0].Name,
+				Class:  dns.ClassINET,
+				Ttl:    1,
 			},
 			Data: string(d),
 		})
 	}
-	return msg, nil
+	return nil
 }
 
 // UnwrapDnsResponse will decode the DNS message and return the bytes in the response
-func UnwrapDnsResponse(q *dns.Msg) string {
-	resp := make([]string, 0)
+func UnwrapDnsResponse(q *dns.Msg, domain string) []byte {
+	resp := make([]byte, 0)
 	answers := append([]dns.RR{}, q.Answer...)
 
 	sort.Slice(answers, func(i, j int) bool {
@@ -383,29 +402,35 @@ func UnwrapDnsResponse(q *dns.Msg) string {
 		switch v := rr.(type) {
 		case *dns.NULL:
 			// Remove first two bytes
-			resp = append(resp, v.Data[2:])
+			resp = append(resp, []byte(v.Data[2:])...)
 		case *dns.PrivateRR:
 			// Remove first two bytes
-			resp = append(resp, v.Data.String()[2:])
+			resp = append(resp, []byte(v.Data.String()[2:])...)
 		case *dns.TXT:
-			resp = append(resp, strings.Join(v.Txt, "")[2:])
+			resp = append(resp, []byte(strings.Join(v.Txt, "")[2:])...)
 		case *dns.MX:
-			// Nothing to remove, Preference takes care of it
-			resp = append(resp, v.Mx)
+			data := v.Mx                             // Nothing to remove, Preference takes care of it
+			data = data[0 : len(data)-len(domain)-2] // remove domain
+			data = Undotify(data)                    // Remove dots
+			resp = append(resp, data...)
 		case *dns.SRV:
-			// Nothing to remove, Priority takes care of it
-			resp = append(resp, v.Target)
+			data := v.Target                         // Nothing to remove, Priority takes care of it
+			data = data[0 : len(data)-len(domain)-2] // remove domain
+			data = Undotify(data)                    // Remove dots
+			resp = append(resp, data...)
 		case *dns.CNAME:
-			// Remove first two characters
-			resp = append(resp, v.Target[2:])
+			data := v.Target[2:]                     // Remove first two characters
+			data = data[0 : len(data)-len(domain)-2] // remove domain
+			data = Undotify(data)                    // Remove dots
+			resp = append(resp, data...)
 		case *dns.AAAA:
 			// Remove first two bytes
-			resp = append(resp, string(v.AAAA[2:]))
+			resp = append(resp, v.AAAA[2:]...)
 		case *dns.A:
 			// Remove first byte
-			resp = append(resp, string(v.A[1:]))
+			resp = append(resp, v.A[1:]...)
 		}
 	}
 
-	return strings.Join(resp, "")
+	return resp
 }

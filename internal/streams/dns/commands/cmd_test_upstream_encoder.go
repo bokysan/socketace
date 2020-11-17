@@ -20,7 +20,7 @@ var CmdTestUpstreamEncoder = Command{
 
 type TestUpstreamEncoderRequest struct {
 	UserId  uint16
-	Pattern string
+	Pattern []byte
 }
 
 func (vr *TestUpstreamEncoderRequest) Command() Command {
@@ -28,15 +28,14 @@ func (vr *TestUpstreamEncoderRequest) Command() Command {
 }
 
 // Encode does not really encode, as the main point is to test if the charset goes through or not
-func (vr *TestUpstreamEncoderRequest) Encode(e enc.Encoder) (string, error) {
+func (vr *TestUpstreamEncoderRequest) Encode(e enc.Encoder) ([]byte, error) {
 	hostname := EncodeRequestHeader(vr.Command(), vr.UserId)
-	hostname += vr.Pattern
-
+	hostname = append(hostname, vr.Pattern...)
 	return hostname, nil
 }
 
 // Decode does not really decode, as the main point is to test if the charset goes through or not
-func (vr *TestUpstreamEncoderRequest) Decode(e enc.Encoder, req string) error {
+func (vr *TestUpstreamEncoderRequest) Decode(e enc.Encoder, req []byte) error {
 	// Verify the request is of proper command
 	if rem, userId, err := DecodeRequestHeader(vr.Command(), req); err != nil {
 		return err
@@ -44,12 +43,12 @@ func (vr *TestUpstreamEncoderRequest) Decode(e enc.Encoder, req string) error {
 		req = rem
 		vr.UserId = userId
 	}
-	vr.Pattern = req
+	vr.Pattern = []byte(req)
 	return nil
 }
 
 type TestUpstreamEncoderResponse struct {
-	Data string
+	Data []byte
 	Err  error
 }
 
@@ -58,30 +57,30 @@ func (vr *TestUpstreamEncoderResponse) Command() Command {
 }
 
 // Encode happens before downstream encoder is selected, so encode with Base32 always
-func (vr *TestUpstreamEncoderResponse) Encode(e enc.Encoder) (string, error) {
+func (vr *TestUpstreamEncoderResponse) Encode(e enc.Encoder) ([]byte, error) {
 	data := &bytes.Buffer{}
 	if vr.Err != nil {
 		if err := data.WriteByte(255); err != nil {
-			return "", err
+			return nil, err
 		}
 		if _, err := data.WriteString(vr.Err.Error()); err != nil {
-			return "", err
+			return nil, err
 		}
 	} else {
 		if err := data.WriteByte(0); err != nil {
-			return "", err
+			return nil, err
 		}
 		if _, err := data.Write([]byte(vr.Data)); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 
-	return vr.Command().String() + enc.Base32Encoding.Encode(data.Bytes()), nil
+	return append([]byte{vr.Command().Code}, enc.Base32Encoding.Encode(data.Bytes())...), nil
 }
 
 // Decode happens before downstream encoder is selected, so encode with Base32 always
-func (vr *TestUpstreamEncoderResponse) Decode(e enc.Encoder, response string) error {
-	if response == "" {
+func (vr *TestUpstreamEncoderResponse) Decode(e enc.Encoder, response []byte) error {
+	if response == nil || len(response) == 0 {
 		return errors.Errorf("Empty string for decoding!")
 	}
 
@@ -117,7 +116,7 @@ func (vr *TestUpstreamEncoderResponse) Decode(e enc.Encoder, response string) er
 		if err != nil && err != io.EOF {
 			return errors.WithStack(err)
 		}
-		vr.Data = string(d[0:cnt])
+		vr.Data = d[0:cnt]
 	}
 	return nil
 }

@@ -30,35 +30,35 @@ func (vr *PacketRequest) Command() Command {
 	return CmdPacket
 }
 
-func (vr *PacketRequest) Encode(e enc.Encoder) (string, error) {
+func (vr *PacketRequest) Encode(e enc.Encoder) ([]byte, error) {
 	hostname := EncodeRequestHeader(vr.Command(), vr.UserId)
 
 	data := &bytes.Buffer{}
 	if err := binary.Write(data, binary.LittleEndian, vr.LastAckedSeqNo); err != nil {
-		return "", nil
+		return nil, err
 	}
 
 	if vr.Packet != nil {
 		if err := data.WriteByte(0xFF); err != nil {
-			return "", err
+			return nil, err
 		}
 		if err := binary.Write(data, binary.LittleEndian, vr.Packet.SeqNo); err != nil {
-			return "", nil
+			return nil, err
 		}
 		if _, err := data.Write(vr.Packet.Data); err != nil {
-			return "", err
+			return nil, err
 		}
 	} else {
 		if err := data.WriteByte(0x00); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 
-	hostname += e.Encode(data.Bytes())
+	hostname = append(hostname, e.Encode(data.Bytes())...)
 	return hostname, nil
 }
 
-func (vr *PacketRequest) Decode(e enc.Encoder, req string) error {
+func (vr *PacketRequest) Decode(e enc.Encoder, req []byte) error {
 	// Verify the request is of proper command
 	if rem, userId, err := DecodeRequestHeader(vr.Command(), req); err != nil {
 		return errors.WithStack(err)
@@ -106,39 +106,39 @@ func (vr *PacketResponse) Command() Command {
 	return CmdPacket
 }
 
-func (vr *PacketResponse) Encode(e enc.Encoder) (string, error) {
+func (vr *PacketResponse) Encode(e enc.Encoder) ([]byte, error) {
 	data := &bytes.Buffer{}
 	if vr.Err != nil {
 		if err := data.WriteByte(0xFF); err != nil {
-			return "", err
+			return nil, err
 		}
 		if _, err := data.WriteString(vr.Err.Error()); err != nil {
-			return "", err
+			return nil, err
 		}
 	} else if vr.Packet != nil {
 		if err := data.WriteByte(0x01); err != nil {
-			return "", err
+			return nil, err
 		}
 		if err := binary.Write(data, binary.LittleEndian, vr.LastAckedSeqNo); err != nil {
-			return "", nil
+			return nil, err
 		}
 		if err := binary.Write(data, binary.LittleEndian, vr.Packet.SeqNo); err != nil {
-			return "", nil
+			return nil, err
 		}
 		if _, err := data.Write(vr.Packet.Data); err != nil {
-			return "", err
+			return nil, err
 		}
 	} else {
 		if err := data.WriteByte(0x00); err != nil {
-			return "", err
+			return nil, err
 		}
 		if err := binary.Write(data, binary.LittleEndian, vr.LastAckedSeqNo); err != nil {
-			return "", nil
+			return nil, err
 		}
 	}
-	return vr.Command().String() + e.Encode(data.Bytes()), nil
+	return append([]byte{vr.Command().Code}, e.Encode(data.Bytes())...), nil
 }
-func (vr *PacketResponse) Decode(e enc.Encoder, req string) error {
+func (vr *PacketResponse) Decode(e enc.Encoder, req []byte) error {
 	// Verify the request is of proper command
 	if err := vr.Command().ValidateType(req); err != nil {
 		return err

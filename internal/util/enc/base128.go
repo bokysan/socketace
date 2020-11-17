@@ -75,7 +75,7 @@ func (b *Base128Encoder) Code() byte {
 	return 'V'
 }
 
-func (b *Base128Encoder) Encode(src []byte) string {
+func (b *Base128Encoder) Encode(src []byte) []byte {
 
 	dst := make([]byte, 0)
 
@@ -106,7 +106,7 @@ func (b *Base128Encoder) Encode(src []byte) string {
 
 	dst = append(dst, bufByte)
 	dst = escape128(dst)
-	return string(dst)
+	return dst
 }
 
 func escape128(src []byte) []byte {
@@ -128,7 +128,7 @@ func unescape128(src []byte) []byte {
 	return res
 }
 
-func (b *Base128Encoder) Decode(data string) ([]byte, error) {
+func (b *Base128Encoder) Decode(data []byte) ([]byte, error) {
 	src := unescape128([]byte(data))
 	res, err := base128.DecodeString(string(src))
 	if err != nil {
@@ -138,16 +138,16 @@ func (b *Base128Encoder) Decode(data string) ([]byte, error) {
 	return res, nil
 }
 
-func (b *Base128Encoder) TestPatterns() []string {
-	return []string{
-		"aA-Aaahhh-Drink-mal-ein-J\344germeister-",
-		"aA-La-fl\373te-na\357ve-fran\347aise-est-retir\351-\340-Cr\350te",
-		"aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZ",
-		"aA0123456789\274\275\276\277\300\301\302\303\304\305\306\307\310\311\312\313\314\315\316\317",
-		"aA\320\321\322\323\324\325\326\327\330\331\332\333\334\335\336\337\340\341\342\343\344\345\346\347\350\351\352\353\354\355\356\357\360\361\362\363\364\365\366\367\370\371\372\373\374\375",
+func (b *Base128Encoder) TestPatterns() [][]byte {
+	return [][]byte{
+		[]byte("aA-Aaahhh-Drink-mal-ein-J\344germeister-"),
+		[]byte("aA-La-fl\373te-na\357ve-fran\347aise-est-retir\351-\340-Cr\350te"),
+		[]byte("aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZ"),
+		[]byte("aA0123456789\274\275\276\277\300\301\302\303\304\305\306\307\310\311\312\313\314\315\316\317"),
+		[]byte("aA\320\321\322\323\324\325\326\327\330\331\332\333\334\335\336\337\340\341\342\343\344\345\346\347\350\351\352\353\354\355\356\357\360\361\362\363\364\365\366\367\370\371\372\373\374\375"),
 	}
 }
 
 func (b *Base128Encoder) Ratio() float64 {
-	return 8 / 7
+	return 8.0 / 7.0
 }

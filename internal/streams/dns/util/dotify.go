@@ -7,13 +7,13 @@ import (
 var DotRegex = regexp.MustCompile("\\.")
 
 // Dotify will include dots every 57 characters
-func Dotify(buf string) (res string) {
+func Dotify(buf []byte) (res []byte) {
 	for len(buf) > 57 {
-		res = buf[0:57] + "."
+		res = append(res, buf[0:57]...)
+		res = append(res, '.')
 		buf = buf[57:]
 	}
-	res = res + buf
-
+	res = append(res, buf...)
 	return
 }
 

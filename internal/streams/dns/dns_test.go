@@ -2,6 +2,7 @@ package dns
 
 import (
 	"bufio"
+	"crypto/rand"
 	"github.com/miekg/dns"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -62,7 +63,6 @@ func echoService(r io.ReadCloser, w io.WriteCloser) error {
 		if err == io.EOF {
 			return nil
 		}
-
 	}
 
 	return nil
@@ -79,8 +79,17 @@ func (t *testCommunicator) Closed() bool {
 
 func (t *testCommunicator) SendAndReceive(m *dns.Msg, timeout *time.Duration) (r *dns.Msg, rtt time.Duration, err error) {
 	if t.message != nil {
-		msg, err := t.message(m, t.LocalAddr())
-		return msg, time.Millisecond, err
+
+		// Simulate sending over the wire
+		var source dns.Msg
+		if data, err := m.Pack(); err != nil {
+			return nil, 0, errors.WithStack(err)
+		} else if err := source.Unpack(data); err != nil {
+			return nil, 0, errors.WithStack(err)
+		}
+
+		msg, err := t.message(&source, t.LocalAddr())
+		return msg, time.Millisecond, errors.WithStack(err)
 	}
 	return nil, time.Duration(0), errors.New("responding method not defined")
 }
@@ -140,17 +149,38 @@ func Test_Handshake(t *testing.T) {
 
 }
 
-func Test_Connection(t *testing.T) {
+func Test_ConnectionViaNetwork(t *testing.T) {
 	var server *ServerDnsListener
 	var client *ClientDnsConnection
 	var err error
 
-	comm := &testCommunicator{}
-
-	server = NewServerDnsListener(testDomain, comm)
-	client, err = NewClientDnsConnection(testDomain, comm)
+	serverComm, err := NewNetConnectionServerCommunicator(&dns.Server{
+		Addr: "127.0.0.1:42000",
+		Net:  "udp",
+	})
 	require.NoError(t, err)
 
+	clientComm, err := NewNetConnectionClientCommunicator(&dns.ClientConfig{
+		Servers:  []string{"127.0.0.1"},
+		Search:   []string{},
+		Port:     "42000",
+		Ndots:    0,
+		Timeout:  1000,
+		Attempts: 2,
+	})
+	require.NoError(t, err)
+
+	server = NewServerDnsListener(testDomain, serverComm)
+	client, err = NewClientDnsConnection(testDomain, clientComm)
+	require.NoError(t, err)
+
+	defer client.Close()
+	defer server.Close()
+
+	echoTest(t, err, client, server)
+}
+
+func echoTest(t *testing.T, err error, client *ClientDnsConnection, server *ServerDnsListener) {
 	err = client.Handshake()
 	require.NoError(t, err)
 
@@ -174,22 +204,205 @@ func Test_Connection(t *testing.T) {
 
 	scanner := bufio.NewScanner(client)
 
-	log.Debugf("(client) Sending HELLO...")
+	log.Debugf("(client) Sending:  HELLO")
 	_, err = client.Write([]byte("HELLO\r\n"))
 	require.NoError(t, err)
-	log.Debugf("(client) Waiting for HELO...")
+	log.Debugf("(client) Waiting:  HELLO")
 	require.True(t, scanner.Scan(), "Could not get first line from echo service")
 	require.Equal(t, "HELLO", scanner.Text())
 
-	log.Debugf("(client) Sending QUIT...")
+	log.Debugf("(client) Sending:  QUIT")
 	_, err = client.Write([]byte("QUIT\r\n"))
 	require.NoError(t, err)
-	log.Debugf("(client) Waiting for QUIT...")
+	log.Debugf("(client) Waiting:  QUIT")
 	require.True(t, scanner.Scan(), "Could not get the second line from the echo service")
 	require.Equal(t, "QUIT", scanner.Text())
 
 	wg.Wait()
 
 	require.NoError(t, echoServiceError)
+}
 
+func Test_LargeUpload(t *testing.T) {
+	var server *ServerDnsListener
+	var client *ClientDnsConnection
+	var err error
+
+	serverComm, err := NewNetConnectionServerCommunicator(&dns.Server{
+		Addr: "127.0.0.1:42001",
+		Net:  "udp",
+	})
+	require.NoError(t, err)
+
+	clientComm, err := NewNetConnectionClientCommunicator(&dns.ClientConfig{
+		Servers:  []string{"127.0.0.1"},
+		Search:   []string{},
+		Port:     "42001",
+		Ndots:    0,
+		Timeout:  1000,
+		Attempts: 2,
+	})
+	require.NoError(t, err)
+
+	server = NewServerDnsListener(testDomain, serverComm)
+	client, err = NewClientDnsConnection(testDomain, clientComm)
+	require.NoError(t, err)
+	defer client.Close()
+	defer server.Close()
+
+	source := make([]byte, 1024*1024*1) // 1 MB
+	dest := make([]byte, 0)             // 1 MB
+	n, err := rand.Read(source)
+	require.NoError(t, err)
+	l := len(source)
+	require.Equal(t, l, n)
+
+	var serverErr = make(chan error, 1)
+	go func() {
+		conn, err := server.Accept()
+		if err != nil {
+			serverErr <- err
+			return
+		}
+		buf := make([]byte, 65536)
+		for true {
+			n, err := conn.Read(buf)
+			if err == io.EOF || err == os.ErrClosed {
+				dest = append(dest, buf[0:n]...)
+				break
+			} else if err != nil {
+				serverErr <- err
+				return
+			}
+			dest = append(dest, buf[0:n]...)
+			if len(dest) == len(source) {
+				break
+			}
+		}
+
+		serverErr <- nil
+
+	}()
+
+	err = client.Handshake()
+	require.NoError(t, err)
+
+	size := 32768
+	pos := 0
+	i := 0
+	for pos < l {
+		i++
+		log.Debugf("Sending %d/%d, %d%%", i, l/size, int(float64(pos)/float64(l)*100.0))
+		if pos+size > l {
+			_, err = client.Write(source[pos:l])
+		} else {
+			_, err = client.Write(source[pos : pos+size])
+		}
+		require.NoError(t, err)
+		pos += size
+	}
+	require.NoError(t, client.Close())
+
+	select {
+	case err = <-serverErr:
+		require.NoError(t, err)
+	}
+
+	require.Equal(t, source, dest)
+}
+
+func Test_LargeDownload(t *testing.T) {
+	var server *ServerDnsListener
+	var client *ClientDnsConnection
+	var err error
+
+	serverComm, err := NewNetConnectionServerCommunicator(&dns.Server{
+		Addr: "127.0.0.1:42002",
+		Net:  "udp",
+	})
+	require.NoError(t, err)
+
+	clientComm, err := NewNetConnectionClientCommunicator(&dns.ClientConfig{
+		Servers:  []string{"127.0.0.1"},
+		Search:   []string{},
+		Port:     "42002",
+		Ndots:    0,
+		Timeout:  1000,
+		Attempts: 2,
+	})
+	require.NoError(t, err)
+
+	server = NewServerDnsListener(testDomain, serverComm)
+	client, err = NewClientDnsConnection(testDomain, clientComm)
+	require.NoError(t, err)
+	defer client.Close()
+	defer server.Close()
+
+	source := make([]byte, 1024*1024*1) // 1 MB
+	dest := make([]byte, 0)             // 1 MB
+	n, err := rand.Read(source)
+	require.NoError(t, err)
+	l := len(source)
+	require.Equal(t, l, n)
+
+	var serverErr = make(chan error, 1)
+	go func() {
+		conn, err := server.Accept()
+		if err != nil {
+			serverErr <- err
+			return
+		}
+
+		size := 32768
+		pos := 0
+		i := 0
+		for pos < l {
+			i++
+			log.Debugf("Sending %d/%d, %d%%", i, l/size, int(float64(pos)/float64(l)*100.0))
+			if pos+size > l {
+				_, err = conn.Write(source[pos:l])
+			} else {
+				_, err = conn.Write(source[pos : pos+size])
+			}
+			if err != nil {
+				serverErr <- err
+				return
+			}
+			pos += size
+		}
+
+		_ = conn.Close()
+
+		serverErr <- nil
+
+	}()
+
+	err = client.Handshake()
+	require.NoError(t, err)
+
+	buf := make([]byte, 65536)
+	for true {
+		n, err := client.Read(buf)
+		if err == io.EOF || err == os.ErrClosed {
+			dest = append(dest, buf[0:n]...)
+			break
+		} else if err != nil {
+			require.NoError(t, err)
+			return
+		}
+		dest = append(dest, buf[0:n]...)
+		//log.Debugf("%d of %d: %d", len(dest), len(source), int(float64(len(dest))/float64(len(source))*100))
+		if len(dest) == len(source) {
+			break
+		}
+	}
+
+	require.NoError(t, client.Close())
+
+	select {
+	case err = <-serverErr:
+		require.NoError(t, err)
+	}
+
+	require.Equal(t, source, dest)
 }

@@ -28,18 +28,17 @@ func (vr *VersionRequest) Command() Command {
 	return CmdVersion
 }
 
-func (vr *VersionRequest) Encode(e enc.Encoder) (string, error) {
+func (vr *VersionRequest) Encode(e enc.Encoder) ([]byte, error) {
 	hostname := EncodeRequestHeader(vr.Command(), 0)
 
 	data := &bytes.Buffer{}
 	if err := binary.Write(data, binary.LittleEndian, vr.ClientVersion); err != nil {
-		return "", err
+		return nil, err
 	}
-	hostname += enc.Base32Encoding.Encode(data.Bytes())
-	return hostname, nil
+	return append(hostname, enc.Base32Encoding.Encode(data.Bytes())...), nil
 }
 
-func (vr *VersionRequest) Decode(e enc.Encoder, req string) error {
+func (vr *VersionRequest) Decode(e enc.Encoder, req []byte) error {
 	// Verify the request is of proper command
 	if rem, _, err := DecodeRequestHeader(vr.Command(), req); err != nil {
 		return err
@@ -65,29 +64,33 @@ func (vr *VersionResponse) Command() Command {
 	return CmdVersion
 }
 
-func (vr *VersionResponse) Encode(e enc.Encoder) (string, error) {
+func (vr *VersionResponse) Encode(e enc.Encoder) ([]byte, error) {
 	data := &bytes.Buffer{}
 	if err := binary.Write(data, binary.LittleEndian, vr.ServerVersion); err != nil {
-		return "", err
+		return nil, err
 	}
 	if vr.Err != nil {
 		if err := data.WriteByte(255); err != nil {
-			return "", err
+			return nil, err
 		}
 		if _, err := data.WriteString(vr.Err.Error()); err != nil {
-			return "", err
+			return nil, err
 		}
 	} else {
 		if err := data.WriteByte(0); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 
-	return string(vr.Command().Code) + EncodeUserId(vr.UserId) + enc.Base32Encoding.Encode(data.Bytes()), nil
+	res := make([]byte, 0)
+	res = append(res, vr.Command().Code)
+	res = append(res, []byte(EncodeUserId(vr.UserId))...)
+	res = append(res, enc.Base32Encoding.Encode(data.Bytes())...)
+	return res, nil
 }
 
-func (vr *VersionResponse) Decode(e enc.Encoder, response string) error {
-	if response == "" {
+func (vr *VersionResponse) Decode(e enc.Encoder, response []byte) error {
+	if response == nil || len(response) == 0 {
 		return errors.Errorf("Empty string for decoding!")
 	}
 
@@ -97,7 +100,7 @@ func (vr *VersionResponse) Decode(e enc.Encoder, response string) error {
 
 	response = response[1:]
 
-	u, err := strconv.ParseInt(response[0:2], 36, 16)
+	u, err := strconv.ParseInt(string(response[0:2]), 36, 16)
 	if err != nil {
 		return err
 	} else {

@@ -23,6 +23,7 @@ type SetOptionsRequest struct {
 	UserId                 uint16
 	LazyMode               *bool
 	MultiQuery             *bool
+	Closed                 *bool
 	DownstreamEncoder      enc.Encoder
 	UpstreamEncoder        enc.Encoder
 	DownstreamFragmentSize *uint32
@@ -62,29 +63,32 @@ func (vr *SetOptionsRequest) readBool(data *bytes.Buffer) (b *bool, err error) {
 	return
 }
 
-func (vr *SetOptionsRequest) Encode(e enc.Encoder) (string, error) {
+func (vr *SetOptionsRequest) Encode(e enc.Encoder) ([]byte, error) {
 	hostname := EncodeRequestHeader(vr.Command(), vr.UserId)
 
 	data := &bytes.Buffer{}
 	if err := vr.writeBool(data, vr.LazyMode); err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := vr.writeBool(data, vr.MultiQuery); err != nil {
-		return "", err
+		return nil, err
+	}
+	if err := vr.writeBool(data, vr.Closed); err != nil {
+		return nil, err
 	}
 	downstreamCode := byte(' ')
 	if vr.DownstreamEncoder != nil {
 		downstreamCode = vr.DownstreamEncoder.Code()
 	}
 	if err := data.WriteByte(downstreamCode); err != nil {
-		return "", err
+		return nil, err
 	}
 	upstreamCode := byte(' ')
 	if vr.UpstreamEncoder != nil {
 		upstreamCode = vr.UpstreamEncoder.Code()
 	}
 	if err := data.WriteByte(upstreamCode); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	fragmentSize := uint32(0xFFFFFFFF)
@@ -92,14 +96,14 @@ func (vr *SetOptionsRequest) Encode(e enc.Encoder) (string, error) {
 		fragmentSize = *vr.DownstreamFragmentSize
 	}
 	if err := binary.Write(data, binary.LittleEndian, &fragmentSize); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	hostname += enc.Base32Encoding.Encode(data.Bytes())
+	hostname = append(hostname, enc.Base32Encoding.Encode(data.Bytes())...)
 	return hostname, nil
 }
 
-func (vr *SetOptionsRequest) Decode(e enc.Encoder, req string) error {
+func (vr *SetOptionsRequest) Decode(e enc.Encoder, req []byte) error {
 	// Verify the request is of proper command
 	if rem, userId, err := DecodeRequestHeader(vr.Command(), req); err != nil {
 		return err
@@ -124,6 +128,11 @@ func (vr *SetOptionsRequest) Decode(e enc.Encoder, req string) error {
 		return nil
 	} else {
 		vr.MultiQuery = b
+	}
+	if b, err := vr.readBool(data); err != nil {
+		return nil
+	} else {
+		vr.Closed = b
 	}
 	if b, err := data.ReadByte(); err != nil {
 		return err
@@ -161,26 +170,26 @@ func (vr *SetOptionsResponse) Command() Command {
 	return CmdSetOptions
 }
 
-func (vr *SetOptionsResponse) Encode(e enc.Encoder) (string, error) {
+func (vr *SetOptionsResponse) Encode(e enc.Encoder) ([]byte, error) {
 	data := &bytes.Buffer{}
 	if vr.Err != nil {
 		if err := data.WriteByte(255); err != nil {
-			return "", err
+			return nil, err
 		}
 		if _, err := data.WriteString(vr.Err.Error()); err != nil {
-			return "", err
+			return nil, err
 		}
 	} else {
 		if err := data.WriteByte(0); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 
-	return vr.Command().String() + enc.Base32Encoding.Encode(data.Bytes()), nil
+	return append([]byte{vr.Command().Code}, enc.Base32Encoding.Encode(data.Bytes())...), nil
 }
 
-func (vr *SetOptionsResponse) Decode(e enc.Encoder, response string) error {
-	if response == "" {
+func (vr *SetOptionsResponse) Decode(e enc.Encoder, response []byte) error {
+	if response == nil || len(response) == 0 {
 		return errors.Errorf("Empty string for decoding!")
 	}
 

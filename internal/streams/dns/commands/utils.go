@@ -1,11 +1,13 @@
 package commands
 
 import (
-	"github.com/bokysan/socketace/v2/internal/streams/dns/util"
 	"github.com/bokysan/socketace/v2/internal/util/enc"
 	"github.com/miekg/dns"
+	log "github.com/sirupsen/logrus"
 	"math/rand"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -21,36 +23,53 @@ func randomChars() string {
 	return string(seed)
 }
 
-// prepareHostname will finalize hostname -- add dots in the name, if needed. It will verify that the total
-// lenght of the hostname does not exiceed HostnameMaxLen and throw an error it it does.
-func prepareHostname(data, domain string) (string, error) {
-	if len(data) > util.LabelMaxlen {
-		data = util.Dotify(data)
-	}
-	hostname := data + "." + domain
-	if len(hostname) > util.HostnameMaxLen-2 {
-		return "", util.ErrTooLong
-	}
+var Digits = regexp.MustCompile("^[0-9]{3}")
 
-	return hostname, nil
-}
-
-// stripDomain will remove the domain from the end of data string and return the string without this domain.
+// StripDomain will remove the domain from the end of data string and return the string without this domain.
 // If the string does not end with the domain, it does nothing.
-func stripDomain(data, domain string) string {
-	if strings.HasSuffix(strings.ToLower(data), "."+strings.ToLower(domain)) {
+func StripDomain(data []byte, domain string) (res []byte) {
+	if strings.HasSuffix(strings.ToLower(string(data)), "."+strings.ToLower(domain)+".") {
 		l2 := len(data)
-		l1 := len(domain) + 1
-		return util.Undotify(data[0 : l2-l1])
-	} else {
-		return util.Undotify(data)
+		l1 := len(domain) + 2
+		data = data[0 : l2-l1]
 	}
+
+	for len(data) > 0 {
+		if c := data[0]; c == '.' {
+			// Skip dots in the name
+			data = data[1:]
+		} else if c != '\\' {
+			// Add escaped char as-is
+			res = append(res, c)
+			data = data[1:]
+		} else if Digits.MatchString(string(data[1:])) {
+			// Parse ascii escapes
+			digits := string(data[1:4])
+			num, err := strconv.ParseInt(digits, 10, 16)
+			if err != nil {
+				log.WithError(err).Errorf(
+					"Failed to parse %q at position #%d to number -- ignoring",
+					num,
+					len(res),
+				)
+			} else {
+				res = append(res, byte(num))
+			}
+			data = data[4:]
+		} else {
+			// Add char normally
+			res = append(res, data[1])
+			data = data[2:]
+		}
+	}
+
+	return
 }
 
 // ComposeRequest will take a DNS message and recompose it back to a complete request, if multiQuery was used
-func ComposeRequest(msg *dns.Msg, domain string) string {
-	var data string
-	if len(msg.Question) > 1 {
+func ComposeRequest(msg *dns.Msg, domain string) (data []byte) {
+	if l := len(msg.Question); l > 1 {
+		log.Debugf("Multi-query request, len=%q", l)
 		questions := append([]dns.Question{}, msg.Question...)
 		sort.Slice(questions, func(i, j int) bool {
 			i1 := enc.Base32CharToInt(questions[i].Name[0])
@@ -61,10 +80,14 @@ func ComposeRequest(msg *dns.Msg, domain string) string {
 		})
 		for _, v := range questions {
 			// remove first two characters
-			data += stripDomain(v.Name, domain)[2:]
+			s := []byte(v.Name[2:])
+			s = StripDomain(s, domain)
+			data = append(data, s...)
 		}
 	} else {
-		data = stripDomain(msg.Question[0].Name, domain)
+		s := []byte(msg.Question[0].Name)
+		s = StripDomain(s, domain)
+		data = append(data, s...)
 	}
 	return data
 }

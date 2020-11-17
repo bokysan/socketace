@@ -71,12 +71,12 @@ func (b *Base32Encoder) Code() byte {
 	return 'T'
 }
 
-func (b *Base32Encoder) Encode(data []byte) string {
-	return iodineBase32Encoding.EncodeToString(data)
+func (b *Base32Encoder) Encode(data []byte) []byte {
+	return []byte(iodineBase32Encoding.EncodeToString(data))
 }
 
-func (b *Base32Encoder) Decode(data string) ([]byte, error) {
-	res, err := iodineBase32Encoding.DecodeString(data)
+func (b *Base32Encoder) Decode(data []byte) ([]byte, error) {
+	res, err := iodineBase32Encoding.DecodeString(string(data))
 	if err != nil {
 		err = errors.WithStack(err)
 		return nil, err
@@ -84,12 +84,12 @@ func (b *Base32Encoder) Decode(data string) ([]byte, error) {
 	return res, nil
 }
 
-func (b *Base32Encoder) TestPatterns() []string {
-	return []string{
-		"aA" + cb32,
+func (b *Base32Encoder) TestPatterns() [][]byte {
+	return [][]byte{
+		[]byte("aA" + cb32),
 	}
 }
 
 func (b *Base32Encoder) Ratio() float64 {
-	return 8 / 5
+	return 8.0 / 5.0
 }

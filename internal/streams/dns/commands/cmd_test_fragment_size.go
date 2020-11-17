@@ -28,19 +28,16 @@ func (vr *TestDownstreamFragmentSizeRequest) Command() Command {
 	return CmdTestDownstreamFragmentSize
 }
 
-func (vr *TestDownstreamFragmentSizeRequest) Encode(e enc.Encoder) (string, error) {
+func (vr *TestDownstreamFragmentSizeRequest) Encode(e enc.Encoder) ([]byte, error) {
 	hostname := EncodeRequestHeader(vr.Command(), vr.UserId)
-
 	data := &bytes.Buffer{}
 	if err := binary.Write(data, binary.LittleEndian, &vr.FragmentSize); err != nil {
-		return "", err
+		return nil, err
 	}
-
-	hostname += enc.Base32Encoding.Encode(data.Bytes())
-	return hostname, nil
+	return append(hostname, enc.Base32Encoding.Encode(data.Bytes())...), nil
 }
 
-func (vr *TestDownstreamFragmentSizeRequest) Decode(e enc.Encoder, req string) error {
+func (vr *TestDownstreamFragmentSizeRequest) Decode(e enc.Encoder, req []byte) error {
 	// Verify the request is of proper command
 	if rem, userId, err := DecodeRequestHeader(vr.Command(), req); err != nil {
 		return err
@@ -74,32 +71,32 @@ func (vr *TestDownstreamFragmentSizeResponse) Command() Command {
 	return CmdTestDownstreamFragmentSize
 }
 
-func (vr *TestDownstreamFragmentSizeResponse) Encode(e enc.Encoder) (string, error) {
+func (vr *TestDownstreamFragmentSizeResponse) Encode(e enc.Encoder) ([]byte, error) {
 	data := &bytes.Buffer{}
 	if vr.Err != nil {
 		if err := data.WriteByte(255); err != nil {
-			return "", err
+			return nil, err
 		}
 		if _, err := data.WriteString(vr.Err.Error()); err != nil {
-			return "", err
+			return nil, err
 		}
 	} else {
 		if err := data.WriteByte(0); err != nil {
-			return "", err
+			return nil, err
 		}
 		if err := binary.Write(data, binary.LittleEndian, &vr.FragmentSize); err != nil {
-			return "", err
+			return nil, err
 		}
 		if _, err := data.Write(vr.Data); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 
-	return vr.Command().String() + e.Encode(data.Bytes()), nil
+	return append([]byte{vr.Command().Code}, e.Encode(data.Bytes())...), nil
 }
 
-func (vr *TestDownstreamFragmentSizeResponse) Decode(e enc.Encoder, response string) error {
-	if response == "" {
+func (vr *TestDownstreamFragmentSizeResponse) Decode(e enc.Encoder, response []byte) error {
+	if response == nil || len(response) == 0 {
 		return errors.Errorf("Empty string for decoding!")
 	}
 

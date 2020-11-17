@@ -4,7 +4,6 @@ import (
 	"encoding/ascii85"
 	"fmt"
 	"github.com/pkg/errors"
-	"strings"
 )
 
 // -------------------------------------------------------
@@ -25,16 +24,37 @@ func (b *Base85Encoder) Code() byte {
 	return 'W'
 }
 
-func (b *Base85Encoder) Encode(data []byte) string {
+func (b *Base85Encoder) Encode(data []byte) []byte {
 	l := ascii85.MaxEncodedLen(len(data))
 	dst := make([]byte, l)
 	ascii85.Encode(dst, data)
-	return strings.Replace(string(dst), ".", "x", -1)
+	for k, b := range dst {
+		if b == '.' {
+			dst[k] = 'v'
+		} else if b == '\\' {
+			dst[k] = 'w'
+		} else if b == '`' {
+			dst[k] = 'x'
+		}
+	}
+	return dst
 }
 
-func (b *Base85Encoder) Decode(data string) ([]byte, error) {
-	dst := make([]byte, len(data))
-	ndst, _, err := ascii85.Decode(dst, []byte(strings.Replace(data, "x", ".", -1)), true)
+func (b *Base85Encoder) Decode(data []byte) ([]byte, error) {
+	source := make([]byte, len(data))
+	copy(source, data)
+	for k, b := range source {
+		if b == 'v' {
+			source[k] = '.'
+		} else if b == 'w' {
+			source[k] = '\\'
+		} else if b == 'x' {
+			source[k] = '`'
+		}
+	}
+
+	dst := make([]byte, len(source))
+	ndst, _, err := ascii85.Decode(dst, source, true)
 	if err != nil {
 		err = errors.WithStack(err)
 		return nil, err
@@ -42,15 +62,24 @@ func (b *Base85Encoder) Decode(data string) ([]byte, error) {
 	return dst[:ndst], nil
 }
 
-func (b *Base85Encoder) TestPatterns() []string {
+func (b *Base85Encoder) TestPatterns() [][]byte {
 	str := make([]byte, 85)
 	// 33 (!) through 117 (u)
 	for k, _ := range str {
-		str[k] = byte(k + 33)
+		b := byte(k + 33)
+		if b == '.' {
+			str[k] = 'v'
+		} else if b == '\\' {
+			str[k] = 'w'
+		} else if b == '`' {
+			str[k] = 'x'
+		} else {
+			str[k] = b
+		}
 	}
 
-	return []string{
-		strings.Replace(string(str), ".", "x", -1),
+	return [][]byte{
+		str,
 	}
 }
 

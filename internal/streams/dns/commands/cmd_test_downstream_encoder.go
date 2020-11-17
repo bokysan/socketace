@@ -23,13 +23,13 @@ func (vr *TestDownstreamEncoderRequest) Command() Command {
 	return CmdTestDownstreamEncoder
 }
 
-func (vr *TestDownstreamEncoderRequest) Encode(e enc.Encoder) (string, error) {
+func (vr *TestDownstreamEncoderRequest) Encode(e enc.Encoder) ([]byte, error) {
 	hostname := EncodeRequestHeader(vr.Command(), 0)
-	hostname += string(vr.DownstreamEncoder.Code())
+	hostname = append(hostname, vr.DownstreamEncoder.Code())
 	return hostname, nil
 }
 
-func (vr *TestDownstreamEncoderRequest) Decode(e enc.Encoder, req string) error {
+func (vr *TestDownstreamEncoderRequest) Decode(e enc.Encoder, req []byte) error {
 	// Verify the request is of proper command
 	if rem, _, err := DecodeRequestHeader(vr.Command(), req); err != nil {
 		return err
@@ -54,16 +54,24 @@ func (vr *TestDownstreamEncoderResponse) Command() Command {
 	return CmdTestDownstreamEncoder
 }
 
-func (vr *TestDownstreamEncoderResponse) Encode(e enc.Encoder) (string, error) {
+func (vr *TestDownstreamEncoderResponse) Encode(e enc.Encoder) ([]byte, error) {
 	if vr.Err != nil {
-		return vr.Command().String() + "e" + enc.Base32Encoding.Encode([]byte(vr.Err.Error())), nil
+		data := make([]byte, 0)
+		data = append(data, vr.Command().Code)
+		data = append(data, 'e')
+		data = append(data, enc.Base32Encoding.Encode([]byte(vr.Err.Error()))...)
+		return data, nil
 	} else {
-		return vr.Command().String() + "o" + e.Encode(vr.Data), nil
+		data := make([]byte, 0)
+		data = append(data, vr.Command().Code)
+		data = append(data, 'o')
+		data = append(data, e.Encode(vr.Data)...)
+		return data, nil
 	}
 }
 
-func (vr *TestDownstreamEncoderResponse) Decode(e enc.Encoder, response string) error {
-	if response == "" {
+func (vr *TestDownstreamEncoderResponse) Decode(e enc.Encoder, response []byte) error {
+	if response == nil || len(response) == 0 {
 		return errors.Errorf("Empty string for decoding!")
 	}
 

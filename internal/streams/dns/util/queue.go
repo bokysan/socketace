@@ -33,6 +33,11 @@ type InQueue struct {
 	readDeadline   time.Time
 }
 
+// HasData returns true if there's any data waiting in the queue to be read
+func (q *InQueue) HasData() bool {
+	return q.queueHasData
+}
+
 func (q *InQueue) checkQueueHasAny() {
 	var hasAny bool
 
@@ -142,7 +147,8 @@ func (q *InQueue) Append(val *Packet) error {
 
 		// Shorten the list of acked chunks
 		if len(q.acked) > MaxCachedChunks {
-			q.acked = q.acked[0:MaxCachedChunks]
+			// Remove first acked chunk
+			q.acked = q.acked[1:]
 		}
 	} else {
 		// Check if this is not a "weird" chunk
@@ -153,7 +159,7 @@ func (q *InQueue) Append(val *Packet) error {
 			}
 		}
 		if !inWindow {
-			return ErrInvalidSequenceNumber
+			return errors.Wrapf(ErrInvalidSequenceNumber, "Received #%d but expected #%d. Acked: %v", val.SeqNo, q.NextSeqNo, q.acked)
 		}
 
 		// Out of order chunk, store it for later

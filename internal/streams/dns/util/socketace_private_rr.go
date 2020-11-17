@@ -2,6 +2,7 @@ package util
 
 import (
 	"github.com/miekg/dns"
+	"github.com/pkg/errors"
 	"strings"
 )
 
@@ -53,7 +54,7 @@ func (rd *SocketAcePrivate) Unpack(buf []byte) (int, error) {
 func (rd *SocketAcePrivate) Copy(dest dns.PrivateRdata) error {
 	scrr, ok := dest.(*SocketAcePrivate)
 	if !ok {
-		return dns.ErrRdata
+		return errors.Wrapf(dns.ErrRdata, "Destination is not SocketAcePrivate")
 	}
 	scrr.Data = rd.Data
 	return nil

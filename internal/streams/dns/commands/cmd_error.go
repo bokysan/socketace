@@ -22,17 +22,17 @@ func (vr *ErrorResponse) Command() Command {
 	return CmdError
 }
 
-func (vr *ErrorResponse) Encode(e enc.Encoder) (string, error) {
+func (vr *ErrorResponse) Encode(e enc.Encoder) ([]byte, error) {
 	data := &bytes.Buffer{}
 	if _, err := data.WriteString(vr.Err.Error()); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return string(vr.Command().Code) + enc.Base32Encoding.Encode(data.Bytes()), nil
+	return append([]byte{vr.Command().Code}, enc.Base32Encoding.Encode(data.Bytes())...), nil
 }
 
-func (vr *ErrorResponse) Decode(e enc.Encoder, response string) error {
-	if response == "" {
+func (vr *ErrorResponse) Decode(e enc.Encoder, response []byte) error {
+	if response == nil || len(response) == 0 {
 		return errors.Errorf("Empty string for decoding!")
 	}
 

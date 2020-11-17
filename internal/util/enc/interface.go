@@ -13,13 +13,13 @@ type Encoder interface {
 	Code() byte
 
 	// Encode will take an array of bytes and encode it using this encoder
-	Encode([]byte) string
+	Encode([]byte) []byte
 
 	// Decode is the reverse proces of encoding
-	Decode(string) ([]byte, error)
+	Decode([]byte) ([]byte, error)
 
 	// Return a list of test patterns for the specified encoding
-	TestPatterns() []string
+	TestPatterns() [][]byte
 
 	// Expansion ratio; e.g. the encoded array is this times longer than the original input
 	Ratio() float64

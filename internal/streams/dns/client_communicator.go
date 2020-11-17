@@ -4,6 +4,7 @@ import (
 	"github.com/bokysan/socketace/v2/internal/streams"
 	"github.com/miekg/dns"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"io"
 	"net"
 	"time"
@@ -50,9 +51,9 @@ func GenerateAddress(server string, defaultPort string) (*net.UDPAddr, error) {
 			return addr, nil
 		}
 	} else if addr, err := net.ResolveUDPAddr("udp", server+":"+defaultPort); err != nil {
-		return addr, nil
-	} else {
 		return nil, err
+	} else {
+		return addr, nil
 	}
 
 	return nil, errors.New("Could not generate an address")
@@ -77,19 +78,26 @@ func NewNetConnectionClientCommunicator(config *dns.ClientConfig) (*NetConnectio
 	for _, v := range config.Servers {
 		var addr *net.UDPAddr
 		addr, err = GenerateAddress(v, config.Port)
+		if addr == nil {
+			err = errors.Errorf("GenerateAddress(%v, %v) returned <nil>", v, config.Port)
+		}
 
 		if err != nil {
+			err = errors.WithStack(err)
 			continue
 		}
 
+		// TODO: Add support for TCP DNS
+		log.Debugf("Dialing udp %v", addr)
 		conn, err = net.DialUDP("udp", nil, addr)
 		if err != nil {
+			err = errors.WithStack(err)
 			continue
 		}
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	return &NetConnectionClientCommunicator{
@@ -116,7 +124,9 @@ func (sc *NetConnectionClientCommunicator) SendAndReceive(m *dns.Msg, timeout *t
 	if timeout != nil {
 		sc.Client.Timeout = *timeout
 	}
-	return sc.Client.ExchangeWithConn(m, sc.Conn)
+	r, rtt, err = sc.Client.ExchangeWithConn(m, sc.Conn)
+	err = errors.Wrapf(err, "Could not send packet to server: %v", m)
+	return
 }
 
 func (sc *NetConnectionClientCommunicator) LocalAddr() net.Addr {

@@ -20,7 +20,7 @@ type Serializer struct {
 
 // DetectCommandType will try to detect the type of command from the given data stream. If it cannot be detected,
 // it returns `nil`.
-func (cl Serializer) DetectCommandType(data string) *Command {
+func (cl Serializer) DetectCommandType(data []byte) *Command {
 	for _, v := range Commands {
 		if v.IsOfType(data) {
 			return &v
@@ -30,17 +30,21 @@ func (cl Serializer) DetectCommandType(data string) *Command {
 }
 
 // EncodeDnsResponse will take a DNS response and create a DNS message
-func (cl Serializer) EncodeDnsResponse(resp Response) (*dns.Msg, error) {
-	return cl.EncodeDnsResponseWithParams(resp, *cl.Upstream.QueryType, cl.Downstream.Encoder)
+func (cl Serializer) EncodeDnsResponse(resp Response, request *dns.Msg) (*dns.Msg, error) {
+	return cl.EncodeDnsResponseWithParams(resp, request, dnsmessage.Type(request.Question[0].Qtype), cl.Downstream.Encoder)
 }
 
 // EncodeDnsResponse will take a DNS response and create a DNS message
-func (cl Serializer) EncodeDnsResponseWithParams(resp Response, qt dnsmessage.Type, downstream enc.Encoder) (*dns.Msg, error) {
+func (cl Serializer) EncodeDnsResponseWithParams(resp Response, request *dns.Msg, qt dnsmessage.Type, downstream enc.Encoder) (*dns.Msg, error) {
 	data, err := resp.Encode(downstream)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-	return util.WrapDnsResponse([]byte(data), qt)
+
+	msg := &dns.Msg{}
+	msg.SetReply(request)
+	err = util.WrapDnsResponse(msg, []byte(data), qt, cl.Domain)
+	return msg, err
 }
 
 // DecodeDnsResponse will take a DNS message and decode it into one of the DNS response object
@@ -50,7 +54,7 @@ func (cl Serializer) DecodeDnsResponse(msg *dns.Msg) (Response, error) {
 
 // DecodeDnsResponse will take a DNS message and decode it into one of the DNS response object
 func (cl Serializer) DecodeDnsResponseWithParams(msg *dns.Msg, downstream enc.Encoder) (Response, error) {
-	data := util.UnwrapDnsResponse(msg)
+	data := util.UnwrapDnsResponse(msg, cl.Domain)
 	for _, c := range Commands {
 		if c.IsOfType(data) {
 			req := c.NewResponse()
@@ -58,7 +62,7 @@ func (cl Serializer) DecodeDnsResponseWithParams(msg *dns.Msg, downstream enc.En
 			return req, err
 		}
 	}
-	return nil, errors.Errorf("Invalid response. Don't know how to handle command type: %v", data[0])
+	return nil, errors.Errorf("Invalid response from server. Don't know how to handle command type: %v", string(data[0]))
 }
 
 // EncodeDnsRequest will take a Request and encode it as a DNS message
@@ -81,8 +85,8 @@ func (cl Serializer) EncodeDnsRequestWithParams(req Request, qt dnsmessage.Type,
 	msg := &dns.Msg{}
 	msg.RecursionDesired = true
 
-	// MaxLen = maximum length - domain name - dot - order
-	maxLen := util.HostnameMaxLen - len(cl.Domain) - 1 - 2
+	// MaxLen = maximum length - domain name - dot - order - ending dot
+	maxLen := util.HostnameMaxLen - len(cl.Domain) - 1 - 2 - 1
 	// make spaces for dots
 	maxLen = maxLen - int(math.Ceil(float64(maxLen)/float64(util.LabelMaxlen)))
 
@@ -95,42 +99,42 @@ func (cl Serializer) EncodeDnsRequestWithParams(req Request, qt dnsmessage.Type,
 				return nil, errors.Errorf("Message too long!")
 			}
 
-			d := ""
+			d := make([]byte, 2)
 			// First two characters represent the byte order
-			d += string(enc.IntToBase32Char(int(order)))
-			d += string(enc.IntToBase32Char(int(order) >> 4))
+			d[0] = enc.IntToBase32Char(int(order))
+			d[1] = enc.IntToBase32Char(int(order) >> 4)
 
 			order += 1
 
 			// Limit strings to 255 characters
 			if len(data) > maxLen {
-				d += data[0:maxLen]
+				d = append(d, data[0:maxLen]...)
 				data = data[maxLen:]
 			} else {
-				d += data
+				d = append(d, data...)
 				data = data[0:0]
 			}
 
-			d, err = prepareHostname(d, cl.Domain)
+			d, err = util.PrepareHostname(d, cl.Domain)
 			if err != nil {
 				return nil, errors.WithStack(err)
 			}
 
 			msg.Question = append(msg.Question, dns.Question{
-				Name:   d,
+				Name:   string(d),
 				Qtype:  uint16(qt),
 				Qclass: uint16(dnsmessage.ClassINET),
 			})
 		}
 	} else {
-		data, err = prepareHostname(data, cl.Domain)
+		hostname, err := util.PrepareHostname(data, cl.Domain)
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
 
 		msg.Question = []dns.Question{
 			{
-				Name:   data,
+				Name:   string(hostname),
 				Qtype:  uint16(qt),
 				Qclass: uint16(dnsmessage.ClassINET),
 			},
@@ -145,7 +149,7 @@ func (cl Serializer) EncodeDnsRequestWithParams(req Request, qt dnsmessage.Type,
 }
 
 // DecodeDnsRequest will take a DNS message and decode it into one of the DNS requests objects
-func (cl Serializer) DecodeDnsRequest(request string) (Request, error) {
+func (cl Serializer) DecodeDnsRequest(request []byte) (Request, error) {
 	for _, c := range Commands {
 		if c.IsOfType(request) {
 			req := c.NewRequest()

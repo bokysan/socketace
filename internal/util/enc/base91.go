@@ -30,12 +30,12 @@ func (b *Base91Encoder) Code() byte {
 	return 'X'
 }
 
-func (b *Base91Encoder) Encode(data []byte) string {
-	return iodineBase91Encoding.EncodeToString(data)
+func (b *Base91Encoder) Encode(data []byte) []byte {
+	return []byte(iodineBase91Encoding.EncodeToString(data))
 }
 
-func (b *Base91Encoder) Decode(data string) ([]byte, error) {
-	res, err := iodineBase91Encoding.DecodeString(data)
+func (b *Base91Encoder) Decode(data []byte) ([]byte, error) {
+	res, err := iodineBase91Encoding.DecodeString(string(data))
 	if err != nil {
 		err = errors.WithStack(err)
 		return nil, err
@@ -43,9 +43,9 @@ func (b *Base91Encoder) Decode(data string) ([]byte, error) {
 	return res, nil
 }
 
-func (b *Base91Encoder) TestPatterns() []string {
-	return []string{
-		cb91,
+func (b *Base91Encoder) TestPatterns() [][]byte {
+	return [][]byte{
+		[]byte(cb91),
 	}
 }
 

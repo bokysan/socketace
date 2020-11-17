@@ -53,7 +53,7 @@ func (c Command) Byte() byte {
 }
 
 // ValidateType will check if the supplied string starts with the given command type and return an error if its not.
-func (c Command) ValidateType(data string) error {
+func (c Command) ValidateType(data []byte) error {
 	if !c.IsOfType(data) {
 		return errors.Errorf("Invalid command type. Expected %v, got, %v", c, data[0])
 	}
@@ -61,28 +61,30 @@ func (c Command) ValidateType(data string) error {
 }
 
 // IsOfType will check if the supplied string starts with the given command type
-func (c Command) IsOfType(data string) bool {
-	if len(data) < 0 {
+func (c Command) IsOfType(data []byte) bool {
+	if data == nil || len(data) < 0 {
 		return false
 	}
-	if data[0] == uint8(c.Code) {
+	if data[0] == c.Code {
 		return true
 	}
-	if strings.ToLower(data[0:1])[0] == uint8(c.Code) {
+	if strings.ToLower(string(data[0:1]))[0] == c.Code {
 		return true
 	}
 	return false
 }
 
 // EncodeRequestHeader will prepare a common request header used by all commands
-func EncodeRequestHeader(c Command, userId uint16) string {
+func EncodeRequestHeader(c Command, userId uint16) []byte {
 
-	hostname := c.String() // Always start with the command ID
-	hostname += randomChars()
+	var hostname []byte
+
+	hostname = append(hostname, c.Code)
+	hostname = append(hostname, []byte(randomChars())...)
 
 	if c.NeedsUserId {
 		u := EncodeUserId(userId)
-		hostname += u
+		hostname = append(hostname, []byte(u)...)
 	}
 
 	return hostname
@@ -98,7 +100,7 @@ func EncodeUserId(userId uint16) string {
 	return u
 }
 
-func DecodeRequestHeader(c Command, req string) (remaining string, userId uint16, err error) {
+func DecodeRequestHeader(c Command, req []byte) (remaining []byte, userId uint16, err error) {
 	err = c.ValidateType(req)
 	if err != nil {
 		return req, 0, err
@@ -107,7 +109,7 @@ func DecodeRequestHeader(c Command, req string) (remaining string, userId uint16
 	req = req[4:] // Remove command type + cache
 
 	if c.NeedsUserId {
-		u, err := strconv.ParseUint(req[0:2], 36, 16)
+		u, err := strconv.ParseUint(string(req[0:2]), 36, 16)
 		if err != nil {
 			return req, 0, err
 		} else {

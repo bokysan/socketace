@@ -49,12 +49,12 @@ func (b *Base64Encoder) Code() byte {
 	return 'S'
 }
 
-func (b *Base64Encoder) Encode(data []byte) string {
-	return iodineBase64Encoding.EncodeToString(data)
+func (b *Base64Encoder) Encode(data []byte) []byte {
+	return []byte(iodineBase64Encoding.EncodeToString(data))
 }
 
-func (b *Base64Encoder) Decode(data string) ([]byte, error) {
-	res, err := iodineBase64Encoding.DecodeString(data)
+func (b *Base64Encoder) Decode(data []byte) ([]byte, error) {
+	res, err := iodineBase64Encoding.DecodeString(string(data))
 	if err != nil {
 		err = errors.WithStack(err)
 		return nil, err
@@ -62,12 +62,12 @@ func (b *Base64Encoder) Decode(data string) ([]byte, error) {
 	return res, nil
 }
 
-func (b *Base64Encoder) TestPatterns() []string {
-	return []string{
-		"aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZ+0129-",
+func (b *Base64Encoder) TestPatterns() [][]byte {
+	return [][]byte{
+		[]byte("aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZ+0129-"),
 	}
 }
 
 func (b *Base64Encoder) Ratio() float64 {
-	return 4 / 3
+	return 4.0 / 3.0
 }

@@ -36,7 +36,7 @@ func Test_TestDownstreamEncoderRequest(t *testing.T) {
 func Test_TestDownstreamEncoderResponse(t *testing.T) {
 	for _, e := range []enc.Encoder{enc.Base32Encoding, enc.RawEncoding} {
 		r1 := &TestDownstreamEncoderResponse{
-			Data: []byte(util.DownloadCodecCheck),
+			Data: util.DownloadCodecCheck,
 		}
 		encoded, err := r1.Encode(e)
 		require.NoError(t, err)

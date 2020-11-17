@@ -390,6 +390,7 @@ func Test_InQueueInvalidSequence(t *testing.T) {
 		SeqNo: MaxCachedChunks + 500,
 		Data:  []byte("789"),
 	})
-	require.Equal(t, err, ErrInvalidSequenceNumber)
+
+	require.True(t, errors.Is(err, ErrInvalidSequenceNumber))
 	require.Len(t, i.in, 0)
 }

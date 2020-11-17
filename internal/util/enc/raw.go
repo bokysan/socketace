@@ -20,16 +20,16 @@ func (b *RawEncoder) Code() byte {
 	return 'R'
 }
 
-func (b *RawEncoder) Encode(data []byte) string {
-	return string(data)
+func (b *RawEncoder) Encode(data []byte) []byte {
+	return data
 }
 
-func (b *RawEncoder) Decode(data string) ([]byte, error) {
-	return []byte(data), nil
+func (b *RawEncoder) Decode(data []byte) ([]byte, error) {
+	return data, nil
 }
 
-func (b *RawEncoder) TestPatterns() []string {
-	return []string{}
+func (b *RawEncoder) TestPatterns() [][]byte {
+	return [][]byte{}
 }
 
 func (b *RawEncoder) Ratio() float64 {
