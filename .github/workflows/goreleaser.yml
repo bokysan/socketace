@@ -11,18 +11,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup environment variables
-        id: setup_environment
-        shell: bash
-        run: |
-          echo "$(go version)" >> $GOVERSION
-          echo "$(git symbolic-ref --short HEAD 2>/dev/null || echo '')" >> $GIT_BRANCH
-
       - name: Setup Go
         id: setup_go
         uses: actions/setup-go@v2
         with:
           go-version: "1.15"
+
+      - name: Setup environment variables
+        id: setup_environment
+        shell: bash
+        run: |
+          echo "GOVERSION=$(go version)" >> $GITHUB_ENV
+          echo "GIT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo '')" >> $GITHUB_ENV
 
       - name: Prepare compilation for linux/amd64 only
         id: update_goreleaser_yml
