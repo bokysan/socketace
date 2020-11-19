@@ -1,4 +1,7 @@
-# SocketAce [![Docker image](https://github.com/bokysan/socketace/workflows/Docker/badge.svg)](https://github.com/bokysan/socketace/actions?query=workflow%3A%22Docker%22)] [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fbokysan%2Fsocketace.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fbokysan%2Fsocketace?ref=badge_shield)
+# SocketAce 
+
+![Build status](https://github.com/bokysan/socketace/workflows/Build%20and%20release/badge.svg) [![Latest commit](https://img.shields.io/github/last-commit/bokysan/socketace)](https://github.com/bokysan/socketace/commits/master) [![Latest release](https://img.shields.io/github/v/release/bokysan/socketace?sort=semver&Label=Latest%20release)](https://github.com/bokysan/socketace/releases) [![Docker image size](https://img.shields.io/docker/image-size/boky/socketace?sort=semver)](https://hub.docker.com/r/boky/socketace/) [![Docker Pulls](https://img.shields.io/docker/pulls/boky/socketace.svg)](https://hub.docker.com/r/boky/socketace/) [![License](https://img.shields.io/github/license/bokysan/socketace)](https://github.com/bokysan/socketace/blob/master/LICENSE) [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fbokysan%2Fsocketace.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fbokysan%2Fsocketace?ref=badge_shield) [![Go Report Card](https://goreportcard.com/badge/github.com/bokysan/socketace)](https://goreportcard.com/report/github.com/bokysan/socketace) ![Go version](https://img.shields.io/github/go-mod/go-version/bokysan/socketace)
+
 
 **Your ultimate connection tunnel.** TCP websocket tunnel. TLS sockets tunnel. Serial connection socket tunnel. One 
 executable for the client and the server. Multiple platforms supported. Written in [go](https://golang.org).
@@ -23,39 +26,36 @@ SocketAce will use *one pyhiscal connection* and overlay multiple *logical conne
 
 ```
 
-   LAYER            CLIENT                        TUNNEL                          SERVER
-+--------------+  
-| LOGICAL      |    Map channels and listen on:                                   Set up channels forward to:
-+--------------+    - TCP socket                                                  - TCP socket
-                    - Unix socket                                                 - Unix socket
-                    - standard input/output
-+--------------+
-| CHANNEL      |                       <- PICK PROPER CHANNEL / SERVICE ->
-+--------------+
-+--------------+
-| MULTIPLEX    |              <- MULTIPLEX MULTIPLE CONNECTIONS OVER ONE CONNECTION  ->
-+--------------+
-+--------------+
-| SECURITY     |                      <- SECURE CONNECTION VIA STARTTLS  ->
-+--------------+
-+--------------+
-| CONNECTIVITY |                               Tunnel via via:
-+--------------+                               - simple sockets (TCP or Unix)
-                                               - TLS-encrypted sockets (TCP or Unix)
-                                               - packet sockets (UDP or UnixPacket)
-                                               - websockets on plain HTTP
-                                               - websockets on TLS-encrpyted HTTPS
-                                               - standard input/output
-
+                      +-----------+                                             +-----------+
+                      |           |                                             |           |
+                      |           |                                             |           |
+                      |           |                                             |           |
+                      |           |   +-------------------------------------+   |           |
+  localhost:1234 -----|           |   | MULTIPLEXED (SECURE) CONNECTION VIA |   |           | ----- 1.2.3.4:5555
+                      |           |   +-------------------------------------+   |           |
+                      |           |   | simple sockets (TCP or Unix)        |   |           |
+                      | SOCKETACE |   | TLS-encrypted sockets (TCP or Unix) |   | SOCKETACE |
+  std. input/output --|           |---| packet sockets (UDP or UnixPacket)  |---|           | ----- /var/some/other.sock
+                      |  CLIENT   |   | websockets on plain HTTP            |   |   SERVER  |
+                      |           |   | websockets on TLS-encrpyted HTTPS   |   |           |
+                      |           |   | standard input/output               |   |           |
+  /var/unix.sock -----|           |   | DNS server                          |   |           | -- SOCKS PROXY
+                      |           |   +-------------------------------------+   |           |
+                      |           |                                             |           |
+                      |           |                                             |           |
+                      |           |                                             |           |
+                      +-----------+                                             +-----------+
 ```
 
 This allows you to do wild combinations, such as:
-- listen on a local TCP socket, forward connection via SSH + standard in/out to remote server to a Unix socket 
+- listen on a local TCP socket, forward connection via SSH + standard in/out to remote server 
   (e.g. `rsync -essh` works)
 - listen on a local TCP socket, wrap the connection TLS and forward to a service on a remote server 
   (i.e. replicate what `stunnel` does) 
 - listen on a local standard in/out, forward to remote service via websocket
   (i.e. "expose ssh via websockets")
+- listen on a TCP socket, forward to a local UNIX socket
+  (i.e. to expose a UNIX-only service to Windows-based machines)
 
 ## Contents
 
