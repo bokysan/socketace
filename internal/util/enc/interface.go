@@ -33,6 +33,7 @@ var (
 	Base85Encoding  Encoder = &Base85Encoder{}
 	Base91Encoding  Encoder = &Base91Encoder{}
 	Base128Encoding Encoder = &Base128Encoder{}
+	Base192Encoding Encoder = &Base192Encoder{}
 	RawEncoding     Encoder = &RawEncoder{}
 )
 
@@ -46,6 +47,7 @@ func FromCode(code byte) (Encoder, error) {
 		Base85Encoding,
 		Base91Encoding,
 		Base128Encoding,
+		Base192Encoding,
 		RawEncoding,
 	} {
 		if enc.Code() == code {

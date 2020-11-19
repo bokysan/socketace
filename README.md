@@ -180,12 +180,12 @@ right protocol when setting up a connection on the client.
 
 The server can listen on multiple ports / protocols at the same time. To configure
 the server, you need to set up:
-- [Upstreams](#channels-upstreams)
+- [Upstreams](#channels)
 - [Severs](#servers)
 
 ##### Channels
 
-Channels are configured in the YAML `channels` section. They define the external services that will be accessible 
+You may configure the channels in the YAML `channels` section. They define the external services that will be accessible 
 through this server setup.
 
 ```yaml
@@ -196,7 +196,7 @@ server:
     ...
 ```
 
-You may define multiple channels (upstreams). Each cannel needs the following properties:
+You may define multiple channels (upstreams). Each channel needs the following properties:
 
 - `name` is the unique name given to this upstream server. This is then referenced later
   on in the `servers` section and on the client. A good example would be `ssh`, `web`, `oracle` etc.
@@ -205,17 +205,13 @@ You may define multiple channels (upstreams). Each cannel needs the following pr
  
 ##### Servers
  
-At this stage, the following `kinds` (protocols) are supported: `websocket`, `tcp`, `stdin` and `unix`, `unixpacket`
-and `udp`.  To configure the server, add it to the `servers` section of the configuration.
+At this stage, the following "kinds" (protocols) are supported: `websocket`, `tcp`, `stdin` and `unix`, `unixpacket`,
+`udp`, `dns+udp` and `dns+tcp`.  To configure the server, add it to the `servers` section of the configuration.
 
 ```yaml
 server:
   servers:
     - address: <address>
-      endpoints:
-        - endpoint: <url-part>
-        ...
-      ]
       [channels: [list of channels]]
       [caCertificate: <ca-certificate>]
       [caCertificateFile: <ca-file>]
@@ -225,12 +221,13 @@ server:
       [privateKeyFile: <private-key-file>]
       [privateKeyPassword: <private-key-password>]
       [privateKeyPasswordProgram: <private-key-password-program>]
+      [ ... other server-specific configuration ... ]
 ```
 
 Where:
 
 - `address` is the type of server and listening location. Can be `http`, `https`, `tcp`, `tcp+tls`, `stdin`
-    `stdin+tls`, `unix` or `unix+tls`, `udp` and `unixpacket`.
+    `stdin+tls`, `unix` or `unix+tls`, `udp`, `unixpacket`, `dns+udp` and `dns+tcp`.
   - Always use a valid url, e.g. `tcp://0.0.0.0:5000`, `https://0.0.0.0:8900`.
   - Address type will define the listening server style, e.g.
     - `http` and `https` will start an HTTP / websocket server, 
@@ -244,8 +241,6 @@ Where:
   - You can also listen on a non-secured channel (e.g. HTTP) and provide certificate info. If provided, server will
     support the `StartTLS` command, which executes TLS handshake after connecting. Especially useful if you're proxying
     the connection over an existing HTTP server.
-- `endpoints` is only required or `websocket` server. It defines the list of URLs the server should listen to.
-  For example `/ws/all` or `/my/secret/connection`. You may listen on multiple URLs.
 - `channels` defines a list of upstream channels that this connection proxies. If not defined, all channels are 
   proxied.
 - Define `caCertificate` or `caCertificateFile` if you want to use mutual (client and server) certificate
@@ -255,17 +250,136 @@ Where:
 - `privateKey`, `privateKeyFile`, `privateKeyPassword` and `privateKeyPasswordProgram` should be pretty 
   self-explanatory. They must be defined when `certificate` is set up. 
 
+###### HTTP and HTTPS (websocket) server
+
+Configure SocketAce to listen for HTTP or HTTPS requests. Example configuration is as follows:
+
+```yaml
+server:
+  servers:
+      # Setup a HTTP websocket server, answering at http://192.168.1.1:8000/ws/all
+    - address: http://192.168.1.1:8000
+      endpoints:
+        - endpoint: /ws/all
+
+      # Setup a HTTP websocket server, secured by StartTLS. This allows you to proxy
+      # secure SocketAce connections over plain :80 HTTP connection
+    - address: http://192.168.1.1:8000
+      endpoints:
+        - endpoint: /ws/all
+      certificateFile: cert.pem
+      privateKeyFile: privatekey.pem
+      privateKeyPassword: test1234
+
+      # Setup a HTTPS websocket server, answering at http://192.168.1.1:8443/ws/ssh
+    - address: http://192.168.1.1:8000
+      endpoints:
+        - channels: [ 'ssh' ]
+          endpoint: /ws/ssh
+      certificateFile: cert.pem
+      privateKeyFile: privatekey.pem
+      privateKeyPassword: test1234
+```
+
+Additional options are as follows:
+- `endpoints` defines the list of URLs the server should listen to.
+  For example `/ws/all` or `/my/secret/connection`. You may listen on multiple URLs.
+
+###### TCP socket and TLS socket server
+
+Configure SocketAce to listen on an unecrypted or encrypted socket. Example configuration is as follows:
+
+```yaml
+server:
+  servers:
+      # Simple socket proxy. No security. Expose all channels.
+    - address: tcp://192.168.1.1:9000
+      # Simple socket proxy. Secure by directly encrypting the socket.
+    - address: tcp+tls://192.168.1.1:9443
+      certificateFile: cert.pem
+      privateKeyFile: privatekey.pem
+      privateKeyPassword: test1234
+```
+
+TCP and TLS sockets require no additional options.
+
+###### UDP socket server
+
+Configure SocketAce to listen on an unecrypted UDP socket. Example configuration is as follows:
+
+```yaml
+server:
+  servers:
+      # Simple UDP proxy. Secured by StartTLS.
+    - address: udp://127.0.0.1:9992
+      certificateFile: cert.pem
+      privateKeyFile: privatekey.pem
+      privateKeyPassword: test1234
+```
+
+###### Standard input/output server
+
+SokcetAce can also listen on standard input/output. This allows you to carry the SocketAce connection
+over alternative means (e.g. via SSH, TELNET or serial ports). As long as you can then pipe it to a
+standard input / output, you're good to go. *Notice that this option may be used only once.* 
+
+```yaml
+server:
+  servers:
+      # Simple socket proxy listening on stdin/stdout.
+    - address: "stdin://"
+```
+
+```yaml
+server:
+  servers:
+      # Simple socket proxy listening on stdin/stdout. Secured by StartTLS.
+    - address: "stdin://"
+      certificateFile: cert.pem
+      privateKeyFile: privatekey.pem
+      privateKeyPassword: test1234
+```
+
+###### DNS server
+
+SocketAce may be proxied over DNS server. It works similar to [iodine](https://github.com/yarrick/iodine) (in fact,
+much of the code was referenced from there) but carries a SocketAce connection instead. Gone is the shared-secret
+password and SocketAce security is used in stead. *Note that it might be a good idea to use mutual TLS authentication
+with public DNS servers.*
+
+```yaml
+server:
+  servers:
+      # UDP DNS server for SocketAce-over-DNS Secured by StartTLS.
+    - address: "dns+udp://192.168.8.1:53"
+      domain: "example.org"
+      certificateFile: cert.pem
+      privateKeyFile: privatekey.pem
+      privateKeyPassword: test1234
+    - address: "dns+tcp://192.168.8.1:53"
+      domain: "example.org"
+      certificateFile: cert.pem
+      privateKeyFile: privatekey.pem
+      privateKeyPassword: test1234
+```
+
+The `domain` represents the listening domain. You will need to make your server an authorative nameserver for
+this domain. Check the [iodine](https://github.com/yarrick/iodine)'s tutorial on how to do this if you are not certain.
+
+
 #### Client
 
-Client configuration is a bit simple and can be done via a config file or via a command line. Basically, only
+Client configuration is a bit simpler and can be done via a config file or via a command line. Basically, only
 two options are important:
 
 - `--upstream <url>` may be specified multiple times. Defines a list of upstream servers that the client will 
   try to connect to. The format is `<protocol>[://<host|path>]`. Protocol may be any of the following: `tcp`, 
-  `tcp+tls`, `stdin`, `stdin+tls`, `unix`, `unix+tls`, `http`, `https`, `unixgram` or `udp`. Examples:
+  `tcp+tls`, `stdin`, `stdin+tls`, `unix`, `unix+tls`, `http`, `https`, `unixgram`, `udp` or `dns`. Examples:
   - `tcp://127.0.0.1:9995` to connect to a socket server on `localhost` on `9995` 
   - `udp://127.0.0.1:9993` to connect to a UDP server on `localhost` on `9993` 
   - `tcp+tls://127.0.0.1:9995` to connect to a TLS-encrypted socket server on `localhost` on `9995` 
+  - `dns://example.org` connect via auto-detected DNS servers, try connecting directly first
+  - `dns://example.org?dns=1.1.1.1,1.0.0.1&direct=false` connect via provided DNS servers 
   - `stdin` to connect to server through standard input / output
 - `--listen <channel>~<listen-url>[~<forward-url>]` will open a listening socket on the client. 
   - `channel` name must be the same as defined on the server. 
@@ -299,6 +413,23 @@ ssh localhost -o ProxyCommand='socketace client --upstream http://127.0.0.1:9999
 ```shell script
 socketace client -e tcp+tls://server.example.com:80 --listen imap~tcp://127.0.0.1:143 --listen imap~tcp://127.0.0.2:587
 ```
+
+##### Use socketace to gradually try different connection methods, by the order of throughoutput
+
+If you configure your SSH `ProxyCommand` like the following, you should be able to connect to your SSH server even
+in the most restrictive environments. SocketAce will try to connect to the server in decreasing order of preference
+through different connection tunnels. The first one to succeeed will establish the connection.
+
+```shell script
+socketace client \
+  --upstream udp://server.example.com:8000 \        # Try UDP first...
+  --upstream tcp://server.example.com:8443 \        # ...then try TCP
+  --upstream http://server.example.com/socketace \  # ...then try HTTP
+  --upstream https://server.example.com/socketace \ # ...then try HTTPS
+  --upstream dns://server.example.com \             # ...finally try over DNS
+  --listen ssh~stdin://
+```
+
 
 ## Caveats
 
@@ -347,11 +478,11 @@ curl -H "Host: www.google.com" https://localhost:9898
 
 There's still some things to be done. If anybody's willing to pick up issues, pull
 requests are welcome:
+- add functionality similar to [sslh](https://github.com/yrutschle/sslh) to be able to "hide" the proxy and share the 
+  port with other services
 - add proxying of UDP connections
-- add functionality similar to [sslh](https://github.com/yrutschle/sslh) to be able to
-  "hide" the proxy and share the port with other services
-- add the possibility of proxying connections through DNS, similar to how 
-  [iodine](https://github.com/yarrick/iodine) works 
+- document the SOCKS proxy option and add tests
+- add support for TUN (and TAP?) connections
   
 ## Similar projects
 

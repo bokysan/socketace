@@ -7,6 +7,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"io"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -44,56 +45,118 @@ type NetConnectionClientCommunicator struct {
 	closed bool
 }
 
-// GenerateAddress will generate an address, optionally adding the specified port if not in the string
-func GenerateAddress(server string, defaultPort string) (*net.UDPAddr, error) {
-	if addr, err := net.ResolveUDPAddr("udp", server); err == nil {
-		if addr.Port != 0 {
+type AddressList []net.Addr
+
+func (l *AddressList) addAddress(network string, address string) {
+	addr, err := ResolveNetworkAddress(network, address, "53")
+	if err != nil {
+		log.Warnf("Cannot resolve %v as a %v address: %v", address, network, err)
+	} else {
+		found := false
+		for _, a := range *l {
+			if a.String() == addr.String() && a.Network() == addr.Network() {
+				found = true
+				break
+			}
+		}
+		if !found {
+			log.Debugf("Adding %v to list.", address)
+			*l = append(*l, addr)
+		}
+	}
+	return
+}
+
+// ResolveAndAddAddress will try to resolve the provide string as a TCP an UDP address. And if any of these succeeed,
+// it will add the address to the list
+func (l *AddressList) ResolveAndAddAddress(address string) {
+	switch {
+	case strings.HasPrefix("tcp://", address):
+		l.addAddress("tcp", address[6:])
+	case strings.HasPrefix("udp://", address):
+		l.addAddress("udp", address[6:])
+	default:
+		l.addAddress("tcp", address)
+		l.addAddress("udp", address)
+	}
+}
+
+// ClientConfig is the configuration for the ClientCommunicator
+type ClientConfig struct {
+	Servers AddressList
+}
+
+// ResolveNetworkAddress will generate an address, optionally adding the specified port if not in the initial string. The
+// function will only work for TCP and UDP addresses.
+func ResolveNetworkAddress(network, server, defaultPort string) (net.Addr, error) {
+	switch network {
+	case "udp", "udp4", "udp6":
+		if addr, err := net.ResolveUDPAddr(network, server); err == nil {
+			if addr.Port != 0 {
+				return addr, nil
+			}
+		} else if addr, err := net.ResolveUDPAddr(network, server+":"+defaultPort); err != nil {
+			return nil, err
+		} else {
 			return addr, nil
 		}
-	} else if addr, err := net.ResolveUDPAddr("udp", server+":"+defaultPort); err != nil {
-		return nil, err
-	} else {
-		return addr, nil
+	case "tcp", "tcp4", "tcp6":
+		if addr, err := net.ResolveTCPAddr(network, server); err == nil {
+			if addr.Port != 0 {
+				return addr, nil
+			}
+		} else if addr, err := net.ResolveTCPAddr(network, server+":"+defaultPort); err != nil {
+			return nil, err
+		} else {
+			return addr, nil
+		}
 	}
 
 	return nil, errors.New("Could not generate an address")
 }
 
-func NewNetConnectionClientCommunicator(config *dns.ClientConfig) (*NetConnectionClientCommunicator, error) {
+func MustResolveNetworkAddress(network, server, defaultPort string) net.Addr {
+	addr, err := ResolveNetworkAddress(network, server, defaultPort)
+	if err != nil {
+		panic(err)
+	}
+	return addr
+}
+
+func NewNetConnectionClientCommunicator(config *ClientConfig) (*NetConnectionClientCommunicator, error) {
 	if config == nil {
-		var err error
-		// TODO:: Make this cross platform
-		config, err = dns.ClientConfigFromFile("/etc/resolv.conf")
-		if err != nil {
-			return nil, errors.WithStack(err)
-		}
+		return nil, errors.New("Client configuration not provided")
 	}
 
 	if len(config.Servers) == 0 {
 		return nil, errors.New("You need at least one upstream server!")
 	}
 
-	var conn *net.UDPConn
+	// Try addresses, in order
+	var conn net.Conn
 	var err error
-	for _, v := range config.Servers {
-		var addr *net.UDPAddr
-		addr, err = GenerateAddress(v, config.Port)
-		if addr == nil {
-			err = errors.Errorf("GenerateAddress(%v, %v) returned <nil>", v, config.Port)
-		}
-
-		if err != nil {
-			err = errors.WithStack(err)
-			continue
-		}
-
+	for _, addr := range config.Servers {
 		// TODO: Add support for TCP DNS
-		log.Debugf("Dialing udp %v", addr)
-		conn, err = net.DialUDP("udp", nil, addr)
+		switch v := addr.(type) {
+		case *net.UDPAddr:
+			log.Tracef("Dialing UDP %v", addr)
+			conn, err = net.DialUDP("udp", nil, v)
+		case *net.TCPAddr:
+			log.Tracef("Dialing TCP %v", addr)
+			conn, err = net.DialTCP("tcp", nil, v)
+		default:
+			err = errors.Errorf("Don't know how to handle address %v", v)
+		}
 		if err != nil {
 			err = errors.WithStack(err)
-			continue
+		} else {
+			log.Infof("Connected to upstream server %v", addr)
+			break
 		}
+	}
+
+	if conn == nil {
+		err = errors.Errorf("No connection can be established. None of the servers %v worked.", config.Servers)
 	}
 
 	if err != nil {
@@ -103,7 +166,8 @@ func NewNetConnectionClientCommunicator(config *dns.ClientConfig) (*NetConnectio
 	return &NetConnectionClientCommunicator{
 		Client: &dns.Client{},
 		Conn: &dns.Conn{
-			Conn: conn,
+			Conn:    conn,
+			UDPSize: 65535,
 		},
 	}, nil
 }
@@ -125,7 +189,7 @@ func (sc *NetConnectionClientCommunicator) SendAndReceive(m *dns.Msg, timeout *t
 		sc.Client.Timeout = *timeout
 	}
 	r, rtt, err = sc.Client.ExchangeWithConn(m, sc.Conn)
-	err = errors.Wrapf(err, "Could not send packet to server: %v", m)
+	err = errors.Wrapf(err, "Could not send packet %v %q to server", dns.Type(m.Question[0].Qtype), m.Question[0].Name)
 	return
 }
 

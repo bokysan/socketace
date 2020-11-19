@@ -15,6 +15,7 @@ type NamedReader struct {
 	name string
 }
 
+// NewNamedReader will create a new NamedReader with the specified name.
 func NewNamedReader(wrapped io.ReadCloser, name string) *NamedReader {
 	return &NamedReader{
 		ReadCloserClosed: NewSafeReader(wrapped),
@@ -22,6 +23,7 @@ func NewNamedReader(wrapped io.ReadCloser, name string) *NamedReader {
 	}
 }
 
+// WriteTo just implements the method from the reader
 func (ns *NamedReader) WriteTo(w io.Writer) (n int64, err error) {
 	if o, ok := ns.ReadCloserClosed.(io.WriterTo); ok {
 		return o.WriteTo(w)
@@ -30,6 +32,10 @@ func (ns *NamedReader) WriteTo(w io.Writer) (n int64, err error) {
 	}
 }
 
+// String will return the "nice" name of the io.Reader -- tha name provided. If this reader wraps another io.Reader
+// which implements the fmt.Stringer interface, it's name will be added at the end after the `->` sign, e.g. you
+// will get `{this-name}->{wrapped-name}`. This allows you to elegantly see the hierarhy of the wrapped reader, if
+// all of them have been wrapped into a NamedReader.
 func (ns *NamedReader) String() string {
 	result := ns.name
 
@@ -51,6 +57,7 @@ func (ns *NamedReader) String() string {
 	return result
 }
 
+// Upwrap will return the underlying Reader.
 func (ns *NamedReader) Unwrap() io.ReadCloser {
 	return ns.ReadCloserClosed
 }

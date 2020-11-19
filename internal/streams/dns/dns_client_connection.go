@@ -35,7 +35,10 @@ import (
 	"time"
 )
 
-var ErrHandshakeNotCompleted = errors.New("no initialization data available - handshake was most likely not completed")
+var (
+	ErrHandshakeNotCompleted = errors.New("no initialization data available - handshake was most likely not completed")
+	ErrConnectionFailed      = errors.Errorf("No suitable DNS query type found. Are you connected to a network?")
+)
 
 // ClientDnsConnection will simulate connections over a DNS server request/response loop
 type ClientDnsConnection struct {
@@ -80,7 +83,7 @@ func NewClientDnsConnection(topDomain string, communicator ClientCommunicator) (
 
 // Close will close the underlying stream. If the Close has already been called, it will do nothing
 func (dc *ClientDnsConnection) Close() error {
-	if !dc.Closed() {
+	if !dc.Closed() && dc.Serializer.Upstream.QueryType != nil {
 		// Notify the server to do a clean shutdown, if handshake was complete
 		var err error
 		// Acknowledge last received chunk
@@ -337,10 +340,7 @@ func (dc *ClientDnsConnection) AutoDetectQueryType() error {
 
 	/* finished */
 	if highestWorking == 0 {
-
-		/* also catches highestworking still 100 */
-		err := errors.Errorf("No suitable DNS query type found. Are you connected to a network?")
-		return err /* problem */
+		return ErrConnectionFailed /* problem */
 	}
 
 	/* "using qtype" message printed in Handshake function */

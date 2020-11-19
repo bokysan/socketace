@@ -26,8 +26,11 @@ var echoServiceAddress = addr.MustParseAddress("tcp://" + "127.0.0.1:" + strconv
 type closer func()
 
 func echoService(r io.ReadCloser, w io.WriteCloser) error {
-	defer streams.TryClose(r)
-	defer streams.TryClose(w)
+	defer func() {
+		log.Debugf("(echo)   Closing streams...")
+		r.Close()
+		w.Close()
+	}()
 
 	scanner := bufio.NewReader(r)
 
@@ -36,6 +39,7 @@ func echoService(r io.ReadCloser, w io.WriteCloser) error {
 		l, prefix, err := scanner.ReadLine()
 		if err == io.EOF {
 			if len(line) == 0 {
+				log.Debugf("(echo)   EOF")
 				return nil
 			}
 		} else if err != nil {
@@ -47,13 +51,12 @@ func echoService(r io.ReadCloser, w io.WriteCloser) error {
 			line = append(line, l...)
 		}
 
-		log.Tracef("Got: %v", string(line))
+		log.Tracef("(echo)   Received: %v", string(line))
 		response := append(line, '\r', '\n')
 		if _, err := w.Write(response); err != nil {
 			return err
 		}
-		log.Tracef("Wrote: %v", string(response))
-
+		log.Tracef("(echo)   Wrote:    %v", string(response[0:len(response)-2]))
 		if string(line) == "QUIT" {
 			break
 		}
@@ -186,6 +189,75 @@ func Test_UdpConnection(t *testing.T) {
 			Data: []upstream.Upstream{
 				&upstream.Packet{
 					Address: socketListenAddress,
+				},
+			},
+		},
+		ListenList: listener.Listeners{
+			&listener.SocketListener{
+				AbstractListener: listener.AbstractListener{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: localServiceAddress,
+				},
+			},
+		},
+	}
+
+	interrupted := make(chan os.Signal, 1)
+	require.NoError(t, s.Startup(interrupted))
+	require.NoError(t, c.Startup(interrupted))
+
+	defer func() {
+		interrupted <- os.Interrupt
+		require.NoError(t, c.Shutdown())
+		require.NoError(t, s.Shutdown())
+	}()
+
+	conn, err := net.Dial("tcp", localServiceAddress.Host)
+	require.NoError(t, err)
+
+	conn = streams.NewSafeConnection(conn)
+
+	defer streams.TryClose(conn)
+
+	helloEchoTest(t, conn)
+
+	log.Infof("Test completed.")
+
+}
+
+func Test_DnsConnection(t *testing.T) {
+
+	localServiceAddress := addr.MustParseAddress("tcp://localhost:" + strconv.Itoa(echoServicePort+12))
+	dnsListenAddress := addr.MustParseAddress("dns://localhost:" + strconv.Itoa(echoServicePort+13))
+
+	s := serverCmd.Command{
+		Channels: server.Channels{
+			&server.NetworkChannel{
+				AbstractChannel: server.AbstractChannel{
+					ProtoName: addr.ProtoName{
+						Name: "echo",
+					},
+					Address: echoServiceAddress,
+				},
+			},
+		},
+		Servers: server.Servers{
+			&server.DnsServer{
+				Domain: "example.org",
+				SocketServer: server.SocketServer{
+					Address: dnsListenAddress,
+				},
+			},
+		},
+	}
+
+	c := clientCmd.Command{
+		Upstream: upstream.Upstreams{
+			Data: []upstream.Upstream{
+				&upstream.Dns{
+					Address: addr.MustParseAddress("dns://example.org?direct=false&dns=localhost:" + strconv.Itoa(echoServicePort+13)),
 				},
 			},
 		},

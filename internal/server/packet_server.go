@@ -71,7 +71,7 @@ func (st *PacketServer) StartupPacket(channels Channels, createListenerFunc List
 	}
 	st.Address.User = nil
 
-	if st.PacketConnection != nil {
+	if st.PacketConnection == nil {
 		n, err := a.Addr()
 		if err != nil {
 			return errors.WithStack(err)

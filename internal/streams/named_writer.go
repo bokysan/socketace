@@ -16,7 +16,7 @@ type NamedWriter struct {
 	closed bool
 }
 
-// NewNamedStream will, unsuprisingly, create a new NamedStream with a given name
+// NewNamedStream will, unsurprisingly, create a new NamedStream with a given name
 func NewNamedWriter(wrapped io.WriteCloser, name string) *NamedWriter {
 	return &NamedWriter{
 		WriteCloserClosed: NewSafeWriter(wrapped),

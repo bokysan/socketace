@@ -15,7 +15,7 @@ type NamedStream struct {
 	name string
 }
 
-// NewNamedStream will, unsuprisingly, create a new NamedStream with a given name
+// NewNamedStream will, unsurprisingly, create a new NamedStream with a given name
 func NewNamedStream(wrapped io.ReadWriteCloser, name string) *NamedStream {
 	return &NamedStream{
 		ReadWriteCloserClosed: NewSafeStream(wrapped),

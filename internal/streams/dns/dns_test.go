@@ -130,6 +130,24 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+func Test_ErrHandshake(t *testing.T) {
+	var client *ClientDnsConnection
+	var err error
+
+	clientComm, err := NewNetConnectionClientCommunicator(&ClientConfig{
+		Servers: AddressList{MustResolveNetworkAddress("udp", "127.0.0.1:41999", "")},
+	})
+	require.NoError(t, err)
+
+	client, err = NewClientDnsConnection(testDomain, clientComm)
+	require.NoError(t, err)
+
+	err = client.Handshake()
+	require.Equal(t, ErrConnectionFailed, err)
+
+	defer client.Close()
+}
+
 func Test_Handshake(t *testing.T) {
 
 	comm := &testCommunicator{}
@@ -160,13 +178,8 @@ func Test_ConnectionViaNetwork(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	clientComm, err := NewNetConnectionClientCommunicator(&dns.ClientConfig{
-		Servers:  []string{"127.0.0.1"},
-		Search:   []string{},
-		Port:     "42000",
-		Ndots:    0,
-		Timeout:  1000,
-		Attempts: 2,
+	clientComm, err := NewNetConnectionClientCommunicator(&ClientConfig{
+		Servers: AddressList{MustResolveNetworkAddress("udp", "127.0.0.1:42000", "")},
 	})
 	require.NoError(t, err)
 
@@ -234,13 +247,8 @@ func Test_LargeUpload(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	clientComm, err := NewNetConnectionClientCommunicator(&dns.ClientConfig{
-		Servers:  []string{"127.0.0.1"},
-		Search:   []string{},
-		Port:     "42001",
-		Ndots:    0,
-		Timeout:  1000,
-		Attempts: 2,
+	clientComm, err := NewNetConnectionClientCommunicator(&ClientConfig{
+		Servers: AddressList{MustResolveNetworkAddress("udp", "127.0.0.1:42001", "")},
 	})
 	require.NoError(t, err)
 
@@ -322,13 +330,8 @@ func Test_LargeDownload(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	clientComm, err := NewNetConnectionClientCommunicator(&dns.ClientConfig{
-		Servers:  []string{"127.0.0.1"},
-		Search:   []string{},
-		Port:     "42002",
-		Ndots:    0,
-		Timeout:  1000,
-		Attempts: 2,
+	clientComm, err := NewNetConnectionClientCommunicator(&ClientConfig{
+		Servers: AddressList{MustResolveNetworkAddress("udp", "127.0.0.1:42002", "")},
 	})
 	require.NoError(t, err)
 

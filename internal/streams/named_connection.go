@@ -16,7 +16,7 @@ type NamedConnection struct {
 	name string
 }
 
-// NewNamedStream will, unsuprisingly, create a new NamedStream with a given name
+// NewNamedStream will, unsurprisingly, create a new NamedStream with a given name
 func NewNamedConnection(wrapped net.Conn, name string) *NamedConnection {
 	return &NamedConnection{
 		Connection: NewSafeConnection(wrapped),

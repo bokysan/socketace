@@ -101,3 +101,9 @@ server:
       certificateFile: cert.pem
       privateKeyFile: privatekey.pem
       privateKeyPassword: test1234
+
+    - address: dns+udp://127.0.0.1:9991 # DNS server for SocketAce-over-DNS
+      domain: example.org # The DNS server requires the top-level domain
+
+    - address: dns+tcp://127.0.0.1:9990 # DNS server for SocketAce-over-DNS
+      domain: example.org # The DNS server requires the top-level domain

@@ -94,7 +94,7 @@ func (cc *ClientConnection) handshake(conn *streams.BufferedInputConnection) (er
 	request.Headers.Set(AcceptsProtocolVersion, version.ProtocolVersion)
 	request.Headers.Set(UserAgent, "socketace/"+version.AppVersion())
 	if err := request.Write(conn); err != nil {
-		return errors.Wrapf(err, "Coud not send intial request")
+		return errors.Wrapf(err, "Coud not send initial request")
 	}
 
 	// Parse the response

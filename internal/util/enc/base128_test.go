@@ -7,7 +7,7 @@ import (
 
 func Test_Base128Transliterate(t *testing.T) {
 	str := make([]byte, 127)
-	for k, _ := range str {
+	for k := range str {
 		str[k] = byte(k)
 	}
 	trans := escape128(str)
@@ -19,10 +19,12 @@ func Test_Base128Transliterate(t *testing.T) {
 }
 
 func Test_Base128Encoder(t *testing.T) {
-	encoder := Base128Encoder{}
-	encoded := encoder.Encode(encoderTest)
-	require.NotContains(t, encoded, ".")
-	decoded, err := encoder.Decode(encoded)
-	require.NoError(t, err)
-	require.Equal(t, encoderTest, decoded)
+	for _, encoderTest := range encoderTests {
+		encoder := Base128Encoder{}
+		encoded := encoder.Encode(encoderTest)
+		require.NotContains(t, encoded, ".")
+		decoded, err := encoder.Decode(encoded)
+		require.NoError(t, err)
+		require.Equal(t, encoderTest, decoded)
+	}
 }

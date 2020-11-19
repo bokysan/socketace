@@ -7,16 +7,18 @@ import (
 	"github.com/bokysan/socketace/v2/internal/streams/dns"
 	dns2 "github.com/miekg/dns"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"strings"
 )
 
 type DnsServer struct {
 	SocketServer
+	Domain string `json:"domain"`
 }
 
 func NewDnsServer() *DnsServer {
 	return &DnsServer{
-		SocketServer{
+		SocketServer: SocketServer{
 			name: "dns",
 		},
 	}
@@ -42,23 +44,18 @@ func (st *DnsServer) Startup(channels Channels) error {
 
 	a := st.Address
 	switch a.Scheme {
-	case "dns":
+	case "dns", "dns+udp":
 		a.Scheme = "udp"
 	case "dns+tcp":
 		a.Scheme = "tcp"
-	case "dns+unix", "dns+unixgram":
-		a.Scheme = "unixgram"
 	default:
-		return errors.Errorf("This implementation does not know how to handle %s", st.Address.String())
+		return errors.Errorf("DNS server can only handle 'dns', 'dns+udp', 'dns+tcp' schemes, not %q", st.Address.String())
 	}
 
 	var comm *dns.NetConnectionServerCommunicator
 	server := &dns2.Server{
-		Addr: "127.0.0.1:42000",
-		Net:  "udp",
-	}
-	if true {
-		return errors.Errorf("Configuration not complete!")
+		Addr: a.Host,
+		Net:  a.Scheme,
 	}
 
 	if st.secure {
@@ -77,8 +74,8 @@ func (st *DnsServer) Startup(channels Channels) error {
 		return errors.Wrapf(err, "Could not start DNS listener")
 	}
 
-	conn := dns.NewServerDnsListener(a.Host, comm)
-
+	log.Infof("Starting DNS server at %v, listening to requests for '%v'", st.String(), st.Domain)
+	conn := dns.NewServerDnsListener(st.Domain, comm)
 	st.listener = conn
 
 	go func() {

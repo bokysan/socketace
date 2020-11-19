@@ -79,7 +79,7 @@ func LogClose(closer io.Closer) error {
 		log.WithError(err).Errorf("Could not close: %v", err)
 		return err
 	} else {
-		// log.Tracef("%v succesfully closed", closer)
+		// log.Tracef("%v successfully closed", closer)
 		return nil
 	}
 }

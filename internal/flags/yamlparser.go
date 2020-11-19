@@ -13,7 +13,9 @@ import (
 	"unsafe"
 )
 
-// YamlParser is an argument parser for flags package but takes a YAML file instead of a standard INI.
+// YamlParser is an argument parser for flags package but takes a YAML file instead of a standard INI. This allows it
+// to parse configuration directives in a more complex / hierarhical manner. While the INI file only has two levels,
+// a YAML file can have multiple. And every level can be either a value, a map or a list.
 type YamlParser struct {
 	ParseAsDefaults bool // override default flags
 	parser          *flags.Parser
@@ -26,8 +28,8 @@ func NewYamlParser(p *flags.Parser) *YamlParser {
 	}
 }
 
-// ParseFile parses flags from an yaml formatted file. The returned errors
-// can be of the type flags.Error or flags.IniError.
+// ParseFile parses flags from an yaml formatted file. The returned errors  can be of the type flags.Error or
+// flags.IniError.
 func (y *YamlParser) ParseFile(filename string) error {
 	body, err := os.Open(filename)
 

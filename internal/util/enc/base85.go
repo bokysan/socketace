@@ -6,9 +6,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-// -------------------------------------------------------
+// This is a modifid version of Base85 which uses an alternate alphabet -- it skips the '.' (dot) and '`' (backtick)
+// to make it more compatible with DNS domain-name system.
 
-// Base64Encoder encodes 3 bytes to 4 characters
 type Base85Encoder struct {
 }
 
@@ -65,7 +65,7 @@ func (b *Base85Encoder) Decode(data []byte) ([]byte, error) {
 func (b *Base85Encoder) TestPatterns() [][]byte {
 	str := make([]byte, 85)
 	// 33 (!) through 117 (u)
-	for k, _ := range str {
+	for k := range str {
 		b := byte(k + 33)
 		if b == '.' {
 			str[k] = 'v'

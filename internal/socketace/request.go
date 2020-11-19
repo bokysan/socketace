@@ -55,13 +55,13 @@ func (sar *Request) String() string {
 
 	buf := bytes.NewBuffer([]byte{})
 	if _, err := io.WriteString(buf, command+"\r\n"); err != nil {
-		panic(errors.Wrapf(err, "Error writting command"))
+		panic(errors.Wrapf(err, "Error writing command"))
 	}
 
 	headers := http.Header(sar.Headers)
 
 	if err := headers.Write(buf); err != nil {
-		panic(errors.Wrapf(err, "Error writting headers"))
+		panic(errors.Wrapf(err, "Error writing headers"))
 	}
 	if _, err := io.WriteString(buf, "\r\n"); err != nil {
 		panic(errors.Wrapf(err, "Error ending headers"))

@@ -54,13 +54,13 @@ func (sar *Response) String() string {
 
 	buf := bytes.NewBuffer([]byte{})
 	if _, err := io.WriteString(buf, command+"\r\n"); err != nil {
-		panic(errors.Wrapf(err, "Error writting command"))
+		panic(errors.Wrapf(err, "Error writing command"))
 	}
 
 	headers := http.Header(sar.Headers)
 
 	if err := headers.Write(buf); err != nil {
-		panic(errors.Wrapf(err, "Error writting headers"))
+		panic(errors.Wrapf(err, "Error writing headers"))
 	}
 	if _, err := io.WriteString(buf, "\r\n"); err != nil {
 		panic(errors.Wrapf(err, "Error ending headers"))
@@ -75,7 +75,7 @@ func (sar *Response) Write(c io.Writer) error {
 	if _, err := c.Write([]byte(sar.String())); err != nil {
 		return errors.Wrapf(err, "Could not write to stream")
 	}
-	log.Debugf("Response writen:\n%v", sar)
+	log.Debugf("Response written:\n%v", sar)
 	return nil
 }
 
