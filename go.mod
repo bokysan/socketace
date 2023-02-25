@@ -24,7 +24,7 @@ require (
 	github.com/xtaci/smux v1.5.14
 	github.com/youmark/pkcs8 v0.0.0-20200520070018-fad002e585ce
 	go.chromium.org/luci v0.0.0-20201018155654-3aac261c05da
-	golang.org/x/crypto v0.0.0-20200728195943-123391ffb6de
-	golang.org/x/net v0.0.0-20200822124328-c89045814202
+	golang.org/x/crypto v0.1.0
+	golang.org/x/net v0.1.0
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 )
